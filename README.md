@@ -9,4 +9,6 @@ Quando você manda uma mensagem com o comando de pesquisa, seguida do nome de um
 
 No futuro, planejo expandir as funcionalidades do meu bot, incluindo opções para hospedagem na nuvem. Além disso, estou considerando a utilização do Ngrok para configurar o servidor pessoal de forma que o bot possa ser hospedado localmente, mas com disponibilidade para acesso público.
 
+Vídeo explicando o uso do projeto: https://www.youtube.com/watch?v=rklYbk4AUpM
+
 Vídeo sobre como criar um bot no discord: https://www.youtube.com/watch?v=Pi5I-vVxPZw
