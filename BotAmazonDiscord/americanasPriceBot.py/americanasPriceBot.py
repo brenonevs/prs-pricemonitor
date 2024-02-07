@@ -8,9 +8,11 @@ from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from time import sleep, time
 
@@ -20,10 +22,10 @@ load_dotenv()
 # Obtém o valor da variável de ambiente "USER_AGENT"
 userAgent = os.getenv("USER_AGENT")
 
-# Classe que representa o bot para verificar preços na Amazon
-class AmazonPriceBot():
+# Classe que representa o bot para verificar preços na Kabum
+class KabumPriceBot():
     def __init__(self, search_query, expected_price, pages, user, loop, times):
-        self.url = "https://www.amazon.com.br"
+        self.url = "https://www.kabum.com.br"
         self.search_query = search_query
         self.priceList = []  # Lista para armazenar os preços encontrados
         self.expected_price = expected_price
@@ -54,41 +56,41 @@ class AmazonPriceBot():
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
-    # Método para realizar a pesquisa do produto na Amazon
-    def search_product(self):
-        try:
-            searchBox = self.driver.find_element(By.XPATH, '//input[@id="twotabsearchtextbox"]')
-            searchBox.click()
-            searchBox.send_keys(self.search_query)
-            searchBox.submit()
-        except NoSuchElementException:
-            try:
-                searchBox = self.driver.find_element(By.XPATH, '//input[@id="nav-bb-search"]')
-                searchBox.click()
-                searchBox.send_keys(self.search_query)
-                searchBox.submit()
-            except Exception as e:
-                print(f"Ocorreu um erro ao tentar realizar a busca por {self.search_query}: {e}")
-                exit()
+    # Método para realizar a pesquisa do produto na Kabum
+    def daily_offers_kabum(self):
+        self.driver.set_window_size(1920, 700)
+        sleep(0.5)
 
-    # Verifica se uma string representa um preço válido
-    def is_valid_price(self, price_str):
-        try:
-            float(price_str)
-            return True
-        except ValueError:
-            return False
+        oferta_do_dia = self.driver.find_element(By.ID, "ofertaDoDiaMenuSuperior")
+        oferta_do_dia.click()
+        sleep(0.5)
+
+        # Capturar elementos com a estrutura especificada
+        product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.sc-cdc9b13f-7.gHEmMz.productCard")
+        for card in product_cards:
+            # Exemplo de informações a serem extraídas
+            product_name = card.find_element(By.CSS_SELECTOR, "span.sc-d79c9c3f-0.nlmfp.sc-cdc9b13f-16.eHyEuD.nameCard").text
+            product_price = card.find_element(By.CSS_SELECTOR, "span.sc-620f2d27-2.bMHwXA.priceCard").text
+            product_link = card.find_element(By.CSS_SELECTOR, "a.sc-cdc9b13f-10.jaPdUR.productLink").get_attribute("href")
+            print(f"\nProduto: {product_name}, Preço: {product_price}, Link: {product_link}\n")
+
+        self.driver.get("https://www.kabum.com.br")
+
+    # Método para realizar a pesquisa do produto na Kabum
+    def search_product(self):
+        search_input = self.driver.find_element(By.ID, 'input-busca')
+        search_input.send_keys(self.search_query)
+        search_input.submit()
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
         product_links = []
         try:
-            # Obtém os títulos e links dos produtos na página atual
-            product_titles = self.driver.find_elements(By.XPATH, '//h2[contains(@class, "a-size-mini a-spacing-none")]/a')
-            for title_link in product_titles:
+            # Obtém os links dos produtos na página atual
+            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.sc-cdc9b13f-7.gHEmMz.productCard a")
+            for card in product_cards:
                 product_links.append({
-                    "url": title_link.get_attribute('href'),
-                    "title": title_link.text
+                    "url": card.get_attribute('href')
                 })
 
             print(f"Encontrados {len(product_links)} produtos na página atual.")
@@ -98,83 +100,91 @@ class AmazonPriceBot():
                     break
                 self.driver.get(product["url"])
                 sleep(1)
-                title = product["title"]
-                price = None
 
                 try:
-                    # Tenta obter o preço do produto
-                    price_whole = self.driver.find_element(By.CLASS_NAME, 'a-price-whole').text.replace('.', '').replace(',', '')
-                    price_fraction = self.driver.find_element(By.CLASS_NAME, 'a-price-fraction').text
-                    price_str = f"{price_whole}.{price_fraction}"
+                    # Espera até que o título do produto esteja visível
+                    title_element = WebDriverWait(self.driver, 10).until(
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD"))
+                    )
+                    product["title"] = title_element.text
 
-                    if not self.is_valid_price(price_str):
-                        raise NoSuchElementException
+                    # Espera até que o preço do produto esteja visível
+                    price_element = WebDriverWait(self.driver, 10).until(
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice"))
+                    )
+                    price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
+                    price = float(price_text)
 
-                    price = float(price_str)
+                    product["preço"] = price
 
                     if price <= self.expected_price:
-                        # Agenda a execução da coroutine notify_discord
-                        asyncio.run_coroutine_threadsafe(self.notify_discord(title, price, product["url"]), self.loop)
 
-                        print(f"Preço encontrado para '{title}': ${price}")
+                        asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
+
+                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
                 except NoSuchElementException:
-                    try:
-                        # Tenta obter o preço de outra forma, caso o anterior não funcione
-                        price_element = self.driver.find_element(By.XPATH, '//span[contains(@id, "price") and contains(@class, "a-size-medium")]')
-                        price_text = price_element.get_attribute('innerHTML')
-                        price_text = price_text.replace('R$', '').replace('&nbsp;', '').replace('.', '').strip()
-                        if ',' in price_text:
-                            price_whole, price_fraction = price_text.split(',')
-                        else:
-                            price_whole = price_text
-                            price_fraction = '00'  
-
-                        price = float(f"{price_whole}.{price_fraction}")
-                        print(f"Preço encontrado para '{title}': ${price}")
-                        if price <= self.expected_price:
-                            asyncio.run_coroutine_threadsafe(self.notify_discord(title, price, product["url"]), self.loop)
-                    except NoSuchElementException:
-                        print(f"Não foi possível encontrar o preço para {title}")
-                        continue
-
-                except Exception as e:
-                    print(f"Erro ao processar o preço para {title}: {e}")
+                    print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")
                     continue
-
-                finally:
-                    self.priceList.append({"titulo": title, "preço": price})
+                except ValueError:
+                    print(f"Formato de preço inválido para '{product['title']}'")
+                    continue
+                except TimeoutException:
+                    print(f"O tempo de espera excedeu enquanto procurava pelo título ou preço de '{product['title']}'")
+                    continue
 
         except Exception as e:
             print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}")
 
+        # Armazena e retorna a lista de produtos e preços
+        self.priceList = product_links
         print(self.priceList)
         return self.priceList
 
     # Método para navegar para a próxima página de resultados
     def next_page(self):
         try:
-            next_page = self.driver.find_element(By.XPATH, '//a[contains(@class, "s-pagination-next")]')
-            next_page.click()
-            return True
+            # Encontra o botão de próxima página usando o seletor CSS
+            next_page = self.driver.find_element(By.CSS_SELECTOR, "a.nextLink")
+            
+            # Verifica se o botão está habilitado para clique
+            if next_page.get_attribute("aria-disabled") == "false":
+                next_page.click()
+                return True
+            else:
+                print("Botão de próxima página está desabilitado.")
+                return False
+        except NoSuchElementException:
+            print("O botão de próxima página não foi encontrado.")
+            return False
         except Exception as e:
             print(f"Ocorreu um erro ao tentar ir para a próxima página: {e}")
             return False
-
+        
     # Método para navegar para a página anterior de resultados
     def previous_page(self):
         try:
-            previous_page = self.driver.find_element(By.XPATH, '//a[contains(@class, "s-pagination-previous")]')
-            previous_page.click()
-            return True
+            # Encontra o botão de página anterior usando o seletor CSS
+            previous_page = self.driver.find_element(By.CSS_SELECTOR, "a.prevLink")
+
+            # Verifica se o botão está habilitado para clique
+            if previous_page.get_attribute("aria-disabled") == "false":
+                previous_page.click()
+                return True
+            else:
+                print("Botão de página anterior está desabilitado.")
+                return False
+        except NoSuchElementException:
+            print("O botão de página anterior não foi encontrado.")
+            return False
         except Exception as e:
             print(f"Ocorreu um erro ao tentar ir para a página anterior: {e}")
             return False
-
-
+        
     def stop_searching(self):
         self.stop_search = True
 
+    # Método para realizar a busca de preços de forma síncrona
     def search_prices_sync(self):
         if self.times == "indeterminado":
             while not self.stop_search:
@@ -225,3 +235,4 @@ class AmazonPriceBot():
         df = pd.DataFrame(self.priceList)
         df = df.dropna(how='all')
         df.to_csv(f"{self.search_query}.csv", index=False)
+
