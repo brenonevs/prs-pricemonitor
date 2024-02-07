@@ -39,7 +39,7 @@ class KabumPriceBot():
         options = Options()
         user_agent = userAgent
         options.add_argument(f'user-agent={user_agent}')
-        #options.add_argument('--headless')
+        options.add_argument('--headless')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920x1080')
         options.add_argument('--disable-dev-shm-usage')
@@ -54,6 +54,10 @@ class KabumPriceBot():
 
     async def notify_discord(self, title, price, url):
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
     # Método para realizar a pesquisa do produto na Kabum
@@ -117,7 +121,12 @@ class KabumPriceBot():
 
                     product["preço"] = price
 
-                    if price <= self.expected_price:
+                    if self.expected_price == None:
+                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
+                        
+                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+
+                    elif price <= self.expected_price:
 
                         asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
 
@@ -227,64 +236,81 @@ class KabumPriceBot():
         
         self.driver.quit()
 
+    
+    # Método para realizar a busca de preços de forma síncrona
     def check_link_prices(self, link):
-        self.driver.get(link)
-        product_links = []
-        try:
-            # Obtém os links dos produtos na página atual
-            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.sc-cdc9b13f-7.gHEmMz.productCard a")
-            for card in product_cards:
-                product_links.append({
-                    "url": card.get_attribute('href')
-                })
+        if self.times == "indeterminado":
+            while not self.stop_search:
+                self.driver.get(link)
+                sleep(0.7)
+                search_url = self.driver.current_url
 
-            print(f"Encontrados {len(product_links)} produtos na página atual.")
-
-            for product in product_links:
-                if self.stop_search:  # Verificar antes de cada ação
+                for _ in range(self.pages):
+                    if self.stop_search:
+                        break
+                    self.check_prices()
+                    sleep(1)
+                    self.driver.get(search_url)
+                    if not self.next_page():
+                        break
+                    search_url = self.driver.current_url
+                    sleep(1)
+        else:
+            for _ in range(self.times):
+                if self.stop_search:
                     break
-                self.driver.get(product["url"])
+                self.driver.get(link)
+                sleep(0.7)
+                self.search_product()
                 sleep(1)
+                search_url = self.driver.current_url
 
-                try:
-                    # Espera até que o título do produto esteja visível
-                    title_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD"))
-                    )
-                    product["title"] = title_element.text
+                for _ in range(self.pages):
+                    if self.stop_search:
+                        break
+                    self.check_prices()
+                    sleep(1)
+                    self.driver.get(search_url)
+                    if not self.next_page():
+                        break
+                    search_url = self.driver.current_url
+                    sleep(1)
+        
+        self.driver.quit()
 
-                    # Espera até que o preço do produto esteja visível
-                    price_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice"))
-                    )
-                    price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
-                    price = float(price_text)
+    # Função para monitorar um link de um produto específico e se o preço dele mudou   
+    def check_specific_product(self, link):
+        last_price = None  # Variável para armazenar o último preço verificado
 
-                    product["preço"] = price
+        while not self.stop_search:
+            self.driver.get(link)
+            sleep(0.7)
+            try:
+                # Espera até que o título do produto esteja visível
+                title_element = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD"))
+                )
+                title = title_element.text
 
-                    if price <= self.expected_price:
+                # Espera até que o preço do produto esteja visível
+                price_element = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice"))
+                )
+                price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
 
-                        #asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
+                price = float(price_text)
 
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+                if price != last_price or last_price is None:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
+                    last_price = price  # Atualiza o último preço verificado
 
-                except NoSuchElementException:
-                    print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")
-                    continue
-                except ValueError:
-                    print(f"Formato de preço inválido para '{product['title']}'")
-                    continue
-                except TimeoutException:
-                    print(f"O tempo de espera excedeu enquanto procurava pelo título ou preço de '{product['title']}'")
-                    continue
+            except NoSuchElementException:
+                print(f"Não foi possível encontrar o título ou preço para a URL: {link}")
+                continue
 
-        except Exception as e:
-            print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}")
-
-        # Armazena e retorna a lista de produtos e preços
-        self.priceList = product_links
-        print(self.priceList)
-        return self.priceList
+    async def search_specific_product(self, link):
+        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link)
 
     async def search_prices(self):
         await asyncio.get_event_loop().run_in_executor(None, self.search_prices_sync)
@@ -298,8 +324,6 @@ class KabumPriceBot():
         df = df.dropna(how='all')
         df.to_csv(f"{self.search_query}.csv", index=False)
 
-
 if __name__ == "__main__":
-    bot = KabumPriceBot("RTX 3060", 4000, 1, None, None, "indeterminado")
-
-    bot.check_link_prices("https://www.kabum.com.br/ofertas/carnatech?pagina=1&desconto_minimo=18&desconto_maximo=100")
+    bot = KabumPriceBot("RTX 3060", 3000, 2, None, None, 1)
+    bot.check_specific_product("https://www.kabum.com.br/produto/444038/monitor-gamer-lg-ultragear-27-full-hd-144hz-1ms-ips-hdmi-e-displayport-hdr-10-99-srgb-freesync-premium-vesa-27gn65r", 60)

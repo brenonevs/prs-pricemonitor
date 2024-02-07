@@ -31,7 +31,7 @@ class MonitorDiscordBot(commands.Bot):
             self.kabum_bot_instance = None
             return
 
-        # Detectar a mensagem com o novo formato
+        # Comando para a BUSCA específica de um produto
         if re.search(r"!pesquisar\(produto\s*=\s*.+?,\s*preço\s*=\s*.+?,\s*paginas\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?\)", message.content):
             match = re.search(r"!pesquisar\(produto\s*=\s*(.+?),\s*preço\s*=\s*(.+?),\s*paginas\s*=\s*(.+?),\s*site\s*=\s*(.+?),\s*repetir\s*=\s*(.+?)\)", message.content)
             product = match.group(1).strip()
@@ -57,4 +57,53 @@ class MonitorDiscordBot(commands.Bot):
                 self.kabum_bot_instance = KabumPriceBot(product, price, pages, message.author, loop, times)
                 await self.kabum_bot_instance.search_prices()
 
-        await self.process_commands(message)
+            await self.process_commands(message)
+
+         # Comando para monitorar um link de listagem de produtos
+        elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*paginas\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?\)", message.content):
+            match = re.search(r"!pesquisar\(link\s*=\s*(.+?),\s*paginas\s*=\s*(.+?),\s*site\s*=\s*(.+?),\s*repetir\s*=\s*(.+?)\)", message.content)
+            link = match.group(1).strip()
+            pages = int(match.group(2).strip())
+            site = match.group(3).strip().lower()
+            times = match.group(4).strip()
+            product = None
+            price = None
+
+            if times.isdigit():
+                times = int(times)
+
+            await message.channel.send(f"Monitorando produtos no {site} com {pages} páginas e repetindo {times} vezes.")
+
+            if "kabum" in site:
+                loop = asyncio.get_running_loop()
+                self.kabum_bot_instance = KabumPriceBot(product, price, pages, message.author, loop, times)
+                await self.kabum_bot_instance.search_link_prices(link)
+
+            elif "amazon" in site:
+                loop = asyncio.get_running_loop()
+                self.amazon_bot_instance = AmazonPriceBot(product, price, pages, message.author, loop, times)
+                await self.amazon_bot_instance.search_link_prices(link)
+
+        elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*(?!paginas\s*=\s*.+?,)\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?\)", message.content):
+            match = re.search(r"!pesquisar\(link\s*=\s*(.+?),\s*site\s*=\s*(.+?),\s*repetir\s*=\s*(.+?)\)", message.content)
+            link_produto = match.group(1).strip()
+            site = match.group(2).strip().lower()
+            times = match.group(3).strip()
+            price = None
+            product = None
+            pages = None
+
+            if times.isdigit():
+                times = int(times)
+
+            await message.channel.send(f"Olá, {message.author.name}! Monitorando o produto no {site} por {times} vezes.")
+
+            if "kabum" in site:
+                loop = asyncio.get_running_loop()
+                self.kabum_bot_instance = KabumPriceBot(product, price, None, message.author, loop, times)
+                await self.kabum_bot_instance.search_specific_product(link_produto)
+            
+            elif "amazon" in site:
+                loop = asyncio.get_running_loop()
+                self.amazon_bot_instance = AmazonPriceBot(product, price, None, message.author, loop, times)
+                await self.amazon_bot_instance.search_specific_product(link_produto)

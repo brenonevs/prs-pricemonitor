@@ -11,6 +11,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from time import sleep, time
 
@@ -52,6 +54,10 @@ class AmazonPriceBot():
 
     async def notify_discord(self, title, price, url):
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
     # Método para realizar a pesquisa do produto na Amazon
@@ -112,11 +118,16 @@ class AmazonPriceBot():
 
                     price = float(price_str)
 
-                    if price <= self.expected_price:
-                        # Agenda a execução da coroutine notify_discord
-                        asyncio.run_coroutine_threadsafe(self.notify_discord(title, price, product["url"]), self.loop)
+                    if self.expected_price == None:
+                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
+                        
+                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
-                        print(f"Preço encontrado para '{title}': ${price}")
+                    elif price <= self.expected_price:
+
+                        asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
+
+                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
                 except NoSuchElementException:
                     try:
@@ -132,21 +143,29 @@ class AmazonPriceBot():
 
                         price = float(f"{price_whole}.{price_fraction}")
                         print(f"Preço encontrado para '{title}': ${price}")
-                        if price <= self.expected_price:
-                            asyncio.run_coroutine_threadsafe(self.notify_discord(title, price, product["url"]), self.loop)
+                        if self.expected_price == None:
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
+                            
+                            print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+
+                        elif price <= self.expected_price:
+
+                            asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
+
+                            print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
                     except NoSuchElementException:
-                        print(f"Não foi possível encontrar o preço para {title}")
+                        print(f"Não foi possível encontrar o preço para {title}. Site pode estar fora do ar.")
                         continue
 
                 except Exception as e:
-                    print(f"Erro ao processar o preço para {title}: {e}")
+                    print(f"Erro ao processar o preço para {title}: {e}. Site pode estar fora do ar.")
                     continue
 
                 finally:
                     self.priceList.append({"titulo": title, "preço": price})
 
         except Exception as e:
-            print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}")
+            print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}. Site pode estar fora do ar.")
 
         print(self.priceList)
         return self.priceList
@@ -217,8 +236,93 @@ class AmazonPriceBot():
         
         self.driver.quit()
 
+    # Método para realizar a busca de preços de forma síncrona
+    def check_link_prices(self, link):
+        if self.times == "indeterminado":
+            while not self.stop_search:
+                self.driver.get(link)
+                sleep(0.7)
+                search_url = self.driver.current_url
+
+                for _ in range(self.pages):
+                    if self.stop_search:
+                        break
+                    self.check_prices()
+                    sleep(1)
+                    self.driver.get(search_url)
+                    if not self.next_page():
+                        break
+                    search_url = self.driver.current_url
+                    sleep(1)
+        else:
+            for _ in range(self.times):
+                if self.stop_search:
+                    break
+                self.driver.get(link)
+                sleep(0.7)
+                self.search_product()
+                sleep(1)
+                search_url = self.driver.current_url
+
+                for _ in range(self.pages):
+                    if self.stop_search:
+                        break
+                    self.check_prices()
+                    sleep(1)
+                    self.driver.get(search_url)
+                    if not self.next_page():
+                        break
+                    search_url = self.driver.current_url
+                    sleep(1)
+        
+        self.driver.quit()
+
+    # Função para monitorar um link de um produto específico e se o preço dele mudou   
+    def check_specific_product(self, link):
+        last_price = None  # Variável para armazenar o último preço verificado
+
+        while not self.stop_search:
+            self.driver.get(link)
+            sleep(0.7)
+            try:
+                # Espera até que o título do produto esteja visível
+                title_element = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.ID, "productTitle"))
+                )
+                title = title_element.text.strip()
+
+                # Espera até que o preço do produto esteja visível (parte inteira)
+                price_whole_element = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "span.a-price-whole"))
+                )
+                price_whole_text = price_whole_element.text.replace('.', '').strip()
+
+                # Espera até que a fração do preço esteja visível
+                price_fraction_element = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "span.a-price-fraction"))
+                )
+                price_fraction_text = price_fraction_element.text.strip()
+
+                price_text = f"{price_whole_text},{price_fraction_text}"
+                price = float(price_text.replace(',', '.'))
+
+                if price != last_price or last_price is None:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
+                    last_price = price  # Atualiza o último preço verificado
+
+            except NoSuchElementException:
+                print(f"Não foi possível encontrar o título ou preço para a URL: {link}. Site pode estar fora do ar.")
+                continue
+
+    async def search_specific_product(self, link):
+        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link)
+
     async def search_prices(self):
         await asyncio.get_event_loop().run_in_executor(None, self.search_prices_sync)
+
+    async def search_link_prices(self, link):
+        await asyncio.get_event_loop().run_in_executor(None, self.check_link_prices, link)
 
     # Método para salvar os dados em um arquivo CSV
     def data_to_csv(self):
