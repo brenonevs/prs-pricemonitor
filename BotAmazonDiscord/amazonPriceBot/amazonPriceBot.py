@@ -39,7 +39,7 @@ class AmazonPriceBot():
         options = Options()
         user_agent = userAgent
         options.add_argument(f'user-agent={user_agent}')
-        options.add_argument('--headless')
+        #options.add_argument('--headless')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920x1080')
         options.add_argument('--disable-dev-shm-usage')
@@ -74,7 +74,7 @@ class AmazonPriceBot():
                 searchBox.send_keys(self.search_query)
                 searchBox.submit()
             except Exception as e:
-                print(f"Ocorreu um erro ao tentar realizar a busca por {self.search_query}: {e}")
+                print(f"Ocorreu um erro ao tentar realizar a busca por {self.search_query}: {e}\n")
                 exit()
 
     # Verifica se uma string representa um preço válido
@@ -154,7 +154,7 @@ class AmazonPriceBot():
 
                             print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
                     except NoSuchElementException:
-                        print(f"Não foi possível encontrar o preço para {title}. Site pode estar fora do ar.")
+                        print(f"Não foi possível encontrar o preço para {title}. Site pode estar fora do ar.\n")
                         continue
 
                 except Exception as e:
