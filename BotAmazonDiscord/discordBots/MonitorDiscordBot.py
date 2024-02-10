@@ -47,6 +47,7 @@ class MonitorDiscordBot(commands.Bot):
 
             if times.isdigit():
                 times = int(times)
+                repeat_message = f" Vou repetir o processo na seguinte quantidade: {times}."
             else:
                 repeat_message = f" Vou repetir o processo na seguinte quantidade: {times}."
 
@@ -101,11 +102,12 @@ class MonitorDiscordBot(commands.Bot):
 
             await self.process_commands(message)
 
-        elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*(?!paginas\s*=\s*.+?,)\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?\)", message.content):
-            match = re.search(r"!pesquisar\(link\s*=\s*(.+?),\s*site\s*=\s*(.+?),\s*repetir\s*=\s*(.+?)\)", message.content)
+        elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?,\s*preco_limite\s*=\s*.+?\)", message.content):
+            match = re.search(r"!pesquisar\(link\s*=\s*(.+?),\s*site\s*=\s*(.+?),\s*repetir\s*=\s*(.+?),\s*preco_limite\s*=\s*(.+?)\)", message.content)
             link_produto = match.group(1).strip()
             site = match.group(2).strip().lower()
             times = match.group(3).strip()
+            preco_limite = match.group(4).strip()
             price = None
             product = None
             pages = None
@@ -118,16 +120,16 @@ class MonitorDiscordBot(commands.Bot):
             if "kabum" in site:
                 loop = asyncio.get_running_loop()
                 self.kabum_bot_instance = KabumPriceBot(product, price, None, message.author, loop, times)
-                await self.kabum_bot_instance.search_specific_product(link_produto)
+                await self.kabum_bot_instance.search_specific_product(link_produto, preco_limite)
             
             elif "amazon" in site:
                 loop = asyncio.get_running_loop()
                 self.amazon_bot_instance = AmazonPriceBot(product, price, None, message.author, loop, times)
-                await self.amazon_bot_instance.search_specific_product(link_produto)
+                await self.amazon_bot_instance.search_specific_product(link_produto, preco_limite)
             
             elif "americanas" in site:
                 loop = asyncio.get_running_loop()
                 self.americanas_bot_instance = AmericanasPriceBot(product, price, None, message.author, loop, times)
-                await self.americanas_bot_instance.search_specific_product(link_produto)   
+                await self.americanas_bot_instance.search_specific_product(link_produto, preco_limite)   
 
             await self.process_commands(message) 

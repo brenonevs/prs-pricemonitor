@@ -48,6 +48,7 @@ class AmericanasPriceBot():
         options.add_argument('--no-sandbox')
         options.add_argument('--ignore-certificate-errors')
         options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        options.add_argument("--disable-blink-features=AutomationControlled")
 
         service = Service(ChromeDriverManager().install())
         service.log_path = 'NUL'
@@ -62,76 +63,82 @@ class AmericanasPriceBot():
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
+    async def notify_discord_about_error(self):
+        message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
+        await self.user.send(message)
+
     # Método para realizar a pesquisa do produto na Americanas
     def search_product(self):
         search_url = f"https://www.americanas.com.br/busca/{self.search_query}"
         if " " in self.search_query:
             self.search_query = self.search_query.replace(" ", "-")
         self.driver.get(search_url)
-        self.url_busca = search_url
-        sleep(5)
+
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
         product_links = []
+
         try:
-            # Tenta encontrar os cartões de produto da primeira estrutura
-            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.sc-cdc9b13f-7.gHEmMz.productCard a")
-            
-            # Se não encontrar, tenta a segunda estrutura
+            # Encontrar cartões de produto
+            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.inStockCard__Wrapper-sc-1ngt5zo-0.iRvjrG a")
             if not product_cards:
-                product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.src__Wrapper-sc-1l8mow4-0.fsViFX a")
+                print("Primeira tentativa falhou. Tentando novamente...")
+                product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.src__Wrapper-sc-1wgxjb2-0.dUUAKQ a")
+
+            print(f"Foram encontrados {len(product_cards) // 2} produtos na página {self.driver.current_url}")
 
             for card in product_cards:
-                product_links.append({"url": card.get_attribute('href')})
+                product_link = {"url": card.get_attribute('href')}
+                # Encontrar título do produto
+                title_selectors = ["h3.product-name__Name-sc-1shovj0-0.gUjFDF", "span.product-name__Name-sc-n8j4w0-0.fcRttM"]
+                for selector in title_selectors:
+                    try:
+                        title_element = card.find_element(By.CSS_SELECTOR, selector)
+                        if title_element:
+                            product_link["title"] = title_element.text
+                            break
+                    except Exception:
+                        continue
 
-            print(f"Encontrados {len(product_links)} produtos na página atual.")
+                # Encontrar preço do produto
+                price_selectors = ["span.price__PromotionalPrice-sc-h6xgft-1.ctBJlj", "span.price__PromotionalPrice-sc-1i4tohf-1.hjtXiU"]
+                for selector in price_selectors:
+                    try:
+                        price_element = card.find_element(By.CSS_SELECTOR, selector)
+                        if price_element:
+                            price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
+                            try:
+                                price = float(price_text)
+                                product_link["preço"] = price
+                                break
+                            except ValueError:
+                                print(f"Formato de preço inválido para '{product_link.get('title', 'Unknown')}'")
+                    except Exception:
+                        continue
 
-            for product in product_links:
+                product_links.append(product_link)
+
+                # Enviar notificação para o Discord
                 if self.stop_search:
                     break
-                self.driver.get(product["url"])
-                sleep(1)
+                
+                if product_link["url"] is not None:
 
-                try:
-                    # Espera até que o título do produto esteja visível
-                    title_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD, h3.product-name__Name-sc-1shovj0-0.gUjFDF"))
-                    )
-                    product["title"] = title_element.text
-
-                    # Espera até que o preço do produto esteja visível
-                    price_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice, span.price__PromotionalPrice-sc-1i4tohf-1.hjtXiU"))
-                    )
-                    price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
-                    price = float(price_text)
-
-                    product["preço"] = price
-
-                    if self.expected_price == None:
-                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
-
-                    elif price <= self.expected_price:
-                        asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
-
-                except NoSuchElementException:
-                    print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")
-                    continue
-                except ValueError:
-                    print(f"Formato de preço inválido para '{product['title']}'")
-                    continue
-                except TimeoutException:
-                    print(f"O tempo de espera excedeu enquanto procurava pelo título ou preço de '{product['title']}'")
-                    continue
+                    if self.expected_price is None:
+                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product_link['title'], product_link["preço"], product_link["url"]), self.loop)
+                        print(f"Preço encontrado para '{product_link['title']}' \nPreço: R${product_link['preço']}\n\n")
+                        sleep(1)
+                    elif product_link["preço"] <= self.expected_price:
+                        asyncio.run_coroutine_threadsafe(self.notify_discord(product_link['title'], product_link["preço"], product_link["url"]), self.loop)
+                        print(f"Preço encontrado para '{product_link['title']}' \nPreço: R${product_link['preço']}\n\n")
+                        sleep(1)
 
         except Exception as e:
             print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}")
 
         self.priceList = product_links
-        print(self.priceList)
+        print("\n\n\n\n\n\n\n\n\n")
         return self.priceList
 
     # Método para navegar para a próxima página de resultados
@@ -160,10 +167,11 @@ class AmericanasPriceBot():
 
     # Método para realizar a busca de preços de forma síncrona
     def search_prices_sync(self):
+        print(f"Monitorando a busca por '{self.search_query}' na Americanas")
         if self.times == "indeterminado":
             while not self.stop_search:
                 self.search_product()
-                sleep(10)
+                sleep(1)
                 search_url = self.driver.current_url
                 
                 for _ in range(self.pages):
@@ -202,6 +210,7 @@ class AmericanasPriceBot():
     
     # Método para realizar a busca de preços de forma síncrona
     def check_link_prices(self, link):
+        print(f"Monitorando link: {link}")
         if self.times == "indeterminado":
             while not self.stop_search:
                 self.driver.get(link)
@@ -225,9 +234,9 @@ class AmericanasPriceBot():
                 if self.stop_search:
                     break
                 self.driver.get(link)
+                self.driver.fullscreen_window()
+                self.driver.execute_script("window.scrollTo(0, 700)")
                 sleep(0.7)
-                self.search_product()
-                sleep(1)
                 search_url = self.driver.current_url
 
                 for _ in range(self.pages):
@@ -244,38 +253,52 @@ class AmericanasPriceBot():
         self.driver.quit()
 
     # Função para monitorar um link de um produto específico e se o preço dele mudou   
-    def check_specific_product(self, link):
+    def check_specific_product(self, link, expected_price):
         last_price = None  # Variável para armazenar o último preço verificado
+
+        expected_price = float(expected_price)
+
+        first_notification = True
+
+        in_stock = True
 
         while not self.stop_search:
             self.driver.get(link)
-            sleep(0.7)
+            sleep(2)  # Aguarda um tempo fixo para a página carregar
+
             try:
-                # Espera até que o título do produto esteja visível
-                title_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.product-title__Title-sc-1hlrxcw-0.jyetLr"))
-                )
+                # Tenta localizar o título do produto
+                title_element = self.driver.find_element(By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD")
                 title = title_element.text
 
-                # Espera até que o preço do produto esteja visível
-                price_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "div.styles__PriceText-sc-1o94vuj-0.kbIkrl.priceSales"))
-                )
+                # Tenta localizar o preço do produto
+                price_element = self.driver.find_element(By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice")
                 price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
 
                 price = float(price_text)
 
-                if price != last_price or last_price is None:
+                if last_price is None:
+                    last_price = price
+
+                if first_notification:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    first_notification = False
+
+                # Condição modificada para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
+                if price < last_price or price < expected_price:
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
 
             except NoSuchElementException:
                 print(f"Não foi possível encontrar o título ou preço para a URL: {link}")
-            continue
+                if in_stock:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
+                    in_stock = False
+                continue
 
-    async def search_specific_product(self, link):
-        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link)
+    async def search_specific_product(self, link, expected_price):
+        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link, expected_price)
 
     async def search_prices(self):
         await asyncio.get_event_loop().run_in_executor(None, self.search_prices_sync)
@@ -288,4 +311,5 @@ class AmericanasPriceBot():
         df = pd.DataFrame(self.priceList)
         df = df.dropna(how='all')
         df.to_csv(f"{self.search_query}.csv", index=False)
+
 

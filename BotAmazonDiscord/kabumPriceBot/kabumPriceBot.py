@@ -60,6 +60,10 @@ class KabumPriceBot():
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
+    async def notify_discord_about_error(self):
+        message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
+        await self.user.send(message)
+
     # Método para realizar a pesquisa do produto na Kabum
     def daily_offers_kabum(self):
         self.driver.set_window_size(1920, 700)
@@ -260,38 +264,58 @@ class KabumPriceBot():
         self.driver.quit()
 
     # Função para monitorar um link de um produto específico e se o preço dele mudou   
-    def check_specific_product(self, link):
+    def check_specific_product(self, link, expected_price):
         last_price = None  # Variável para armazenar o último preço verificado
+
+        expected_price = float(expected_price)
+
+        first_notification = True
+
+        in_stock = True
 
         while not self.stop_search:
             self.driver.get(link)
-            sleep(0.7)
+            sleep(2)  # Aguarda um tempo fixo para a página carregar
+
             try:
-                # Espera até que o título do produto esteja visível
-                title_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD"))
-                )
+                # Tenta localizar o título do produto
+                title_element = self.driver.find_element(By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD")
                 title = title_element.text
 
-                # Espera até que o preço do produto esteja visível
-                price_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice"))
-                )
+                # Tenta localizar o preço do produto
+                price_element = self.driver.find_element(By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice")
                 price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
 
                 price = float(price_text)
 
-                if price != last_price or last_price is None:
+                print(price)
+
+                print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
+
+                if last_price is None:
+                    last_price = price
+
+                if first_notification:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    first_notification = False
+
+                # Condição modificada para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
+                if price < last_price or price < expected_price:
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
+                
+                in_stock = True
 
             except NoSuchElementException:
                 print(f"Não foi possível encontrar o título ou preço para a URL: {link}")
+                if in_stock:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
+                    in_stock = False    
                 continue
 
-    async def search_specific_product(self, link):
-        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link)
+    async def search_specific_product(self, link, expected_price):
+        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link, expected_price)
 
     async def search_prices(self):
         await asyncio.get_event_loop().run_in_executor(None, self.search_prices_sync)

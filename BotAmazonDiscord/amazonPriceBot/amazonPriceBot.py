@@ -60,6 +60,10 @@ class AmazonPriceBot():
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
+    async def notify_discord_about_error(self):
+        message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
+        await self.user.send(message)
+
     # Método para realizar a pesquisa do produto na Amazon
     def search_product(self):
         try:
@@ -278,45 +282,55 @@ class AmazonPriceBot():
         self.driver.quit()
 
     # Função para monitorar um link de um produto específico e se o preço dele mudou   
-    def check_specific_product(self, link):
+    def check_specific_product(self, link, expected_price):
         last_price = None  # Variável para armazenar o último preço verificado
+
+        expected_price = float(expected_price)
+
+        first_notification = True
 
         while not self.stop_search:
             self.driver.get(link)
-            sleep(0.7)
+            sleep(2)  # Aguarda um tempo fixo para a página carregar
+
             try:
-                # Espera até que o título do produto esteja visível
-                title_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.ID, "productTitle"))
-                )
+                # Tenta localizar o título do produto
+                title_element = self.driver.find_element(By.ID, "productTitle")
                 title = title_element.text.strip()
 
-                # Espera até que o preço do produto esteja visível (parte inteira)
-                price_whole_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "span.a-price-whole"))
-                )
+                # Tenta localizar a parte inteira do preço
+                price_whole_element = self.driver.find_element(By.CSS_SELECTOR, "span.a-price-whole")
                 price_whole_text = price_whole_element.text.replace('.', '').strip()
 
-                # Espera até que a fração do preço esteja visível
-                price_fraction_element = WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "span.a-price-fraction"))
-                )
+                # Tenta localizar a fração do preço
+                price_fraction_element = self.driver.find_element(By.CSS_SELECTOR, "span.a-price-fraction")
                 price_fraction_text = price_fraction_element.text.strip()
 
                 price_text = f"{price_whole_text},{price_fraction_text}"
                 price = float(price_text.replace(',', '.'))
 
-                if price != last_price or last_price is None:
+                if last_price is None:
+                    last_price = price
+
+                if first_notification:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    first_notification = False
+
+                # Condição para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
+                if price < last_price or price < expected_price:
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
 
             except NoSuchElementException:
-                print(f"Não foi possível encontrar o título ou preço para a URL: {link}. Site pode estar fora do ar.")
+                print(f"Não foi possível encontrar o título ou preço para a URL: {link}")
+                if in_stock:
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
+                    in_stock = False    
                 continue
 
-    async def search_specific_product(self, link):
-        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link)
+    async def search_specific_product(self, link, expected_price):
+        await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link, expected_price)
 
     async def search_prices(self):
         await asyncio.get_event_loop().run_in_executor(None, self.search_prices_sync)
