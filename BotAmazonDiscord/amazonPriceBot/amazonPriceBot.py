@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
@@ -46,6 +46,7 @@ class AmazonPriceBot():
         options.add_argument('--no-sandbox')
         options.add_argument('--ignore-certificate-errors')
         options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        options.add_argument('--disable-blink-features=AutomationControlled')
 
         service = Service(ChromeDriverManager().install())
         service.log_path = 'NUL'
@@ -290,8 +291,20 @@ class AmazonPriceBot():
         first_notification = True
 
         while not self.stop_search:
-            self.driver.get(link)
-            sleep(2)  # Aguarda um tempo fixo para a página carregar
+
+            try:
+                # Tente carregar a página
+                self.driver.get(link)
+                sleep(5)        
+            except TimeoutException:
+                # Se ocorrer um timeout, recarregue a página e vá para a próxima iteração
+                print(f"Timeout ao carregar {link}, tentando recarregar.")
+                try:
+                    self.driver.refresh()
+                except Exception as e:
+                    print(f"Erro ao tentar recarregar a página: {e}")
+                    continue  # Pula para a próxima iteração do loop
+                continue
 
             try:
                 # Tenta localizar o título do produto

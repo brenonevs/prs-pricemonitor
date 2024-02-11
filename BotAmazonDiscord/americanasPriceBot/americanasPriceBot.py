@@ -49,6 +49,9 @@ class AmericanasPriceBot():
         options.add_argument('--ignore-certificate-errors')
         options.add_experimental_option('excludeSwitches', ['enable-logging'])
         options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-images')
+        
 
         service = Service(ChromeDriverManager().install())
         service.log_path = 'NUL'
@@ -263,8 +266,22 @@ class AmericanasPriceBot():
         in_stock = True
 
         while not self.stop_search:
-            self.driver.get(link)
-            sleep(2)  # Aguarda um tempo fixo para a página carregar
+
+            try:
+                # Tente carregar a página
+                self.driver.refresh()
+                sleep(3)
+                self.driver.refresh()
+                sleep(2)
+            except TimeoutException:
+                # Se ocorrer um timeout, recarregue a página e vá para a próxima iteração
+                print(f"Timeout ao carregar {link}, tentando recarregar.")
+                try:
+                    self.driver.refresh()
+                except Exception as e:
+                    print(f"Erro ao tentar recarregar a página: {e}")
+                    continue  # Pula para a próxima iteração do loop
+                continue
 
             try:
                 # Tenta localizar o título do produto
