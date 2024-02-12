@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, WebDriverException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
@@ -36,22 +36,24 @@ class KabumPriceBot():
         self.stop_search = False  # Controle de interrupção
 
         # Configurações do navegador Chrome
-        options = Options()
+        self.options = Options() 
         user_agent = userAgent
-        options.add_argument(f'user-agent={user_agent}')
+        self.options.add_argument(f'user-agent={user_agent}')
         #options.add_argument('--headless')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920x1080')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--ignore-certificate-errors')
-        options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        options.add_argument('--disable-blink-features=AutomationControlled')
+        self.options.add_argument('--disable-gpu')
+        self.options.add_argument('--window-size=1920x1080')
+        self.options.add_argument('--disable-dev-shm-usage')
+        self.options.add_argument('--no-sandbox')
+        self.options.add_argument('--ignore-certificate-errors')
+        self.options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        self.options.add_argument('--disable-blink-features=AutomationControlled')
+        self.options.add_argument('--disable-extensions')
+        self.options.add_argument('--disable-images')
 
         service = Service(ChromeDriverManager().install())
         service.log_path = 'NUL'
 
-        self.driver = webdriver.Chrome(service=service, options=options)
+        self.driver = webdriver.Chrome(service=service, options=self.options)
 
     async def notify_discord(self, title, price, url):
         message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
@@ -183,6 +185,7 @@ class KabumPriceBot():
     def search_prices_sync(self):
         if self.times == "indeterminado":
             while not self.stop_search:
+                self.restart_driver()
                 self.driver.get(self.url)
                 sleep(0.7)
                 self.search_product()
@@ -203,6 +206,7 @@ class KabumPriceBot():
             for _ in range(self.times):
                 if self.stop_search:
                     break
+                self.restart_driver()
                 self.driver.get(self.url)
                 sleep(0.7)
                 self.search_product()
@@ -227,6 +231,7 @@ class KabumPriceBot():
     def check_link_prices(self, link):
         if self.times == "indeterminado":
             while not self.stop_search:
+                self.restart_driver()
                 self.driver.get(link)
                 sleep(0.7)
                 search_url = self.driver.current_url
@@ -245,6 +250,7 @@ class KabumPriceBot():
             for _ in range(self.times):
                 if self.stop_search:
                     break
+                self.restart_driver()
                 self.driver.get(link)
                 sleep(0.7)
                 self.search_product()
@@ -256,7 +262,7 @@ class KabumPriceBot():
                         break
                     self.check_prices()
                     sleep(1)
-                    self.driver.get(search_url)
+                    self.driver.get(search_url) 
                     if not self.next_page():
                         break
                     search_url = self.driver.current_url
@@ -264,9 +270,15 @@ class KabumPriceBot():
         
         self.driver.quit()
 
+    def restart_driver(self):
+        self.driver.quit()
+        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=self.options)
+
     # Função para monitorar um link de um produto específico e se o preço dele mudou   
     def check_specific_product(self, link, expected_price):
         last_price = None  # Variável para armazenar o último preço verificado
+
+        notified_for_price_drop = False 
 
         expected_price = float(expected_price)
 
@@ -275,11 +287,11 @@ class KabumPriceBot():
         in_stock = True
 
         while not self.stop_search:
-
             try:
                 # Tente carregar a página
+                self.restart_driver()
                 self.driver.get(link)
-                sleep(5)
+                sleep(1)
             except TimeoutException:
                 # Se ocorrer um timeout, recarregue a página e vá para a próxima iteração
                 print(f"Timeout ao carregar {link}, tentando recarregar.")
@@ -301,8 +313,6 @@ class KabumPriceBot():
 
                 price = float(price_text)
 
-                print(price)
-
                 print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
 
                 if last_price is None:
@@ -313,10 +323,11 @@ class KabumPriceBot():
                     first_notification = False
 
                 # Condição modificada para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
-                if price < last_price or price < expected_price:
+                if price < last_price or (price < expected_price and not notified_for_price_drop):
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
+                    notified_for_price_drop = True
                 
                 in_stock = True
 
@@ -326,6 +337,12 @@ class KabumPriceBot():
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
                     in_stock = False    
                 continue
+
+            except WebDriverException as e:
+                if "Out of Memory" in str(e):
+                    print("Detectado erro 'Out of Memory'. Reiniciando o driver...")
+                    self.restart_driver()
+
 
     async def search_specific_product(self, link, expected_price):
         await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link, expected_price)
