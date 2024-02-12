@@ -6,13 +6,19 @@ from discord.ext import commands
 from amazonPriceBot.amazonPriceBot import AmazonPriceBot
 from kabumPriceBot.kabumPriceBot import KabumPriceBot
 from americanasPriceBot.americanasPriceBot import AmericanasPriceBot
+from aliexpressPriceBot.aliexpressPriceBot import AliExpressPriceBot
 
 class MonitorDiscordBot(commands.Bot):
     def __init__(self, command_prefix, intents):
         super().__init__(command_prefix=command_prefix, intents=intents)
+
         self.amazon_bot_instance = None
+
         self.kabum_bot_instance = None
+
         self.americanas_bot_instance = None
+
+        self.ali_express_bot_instance = None
 
     async def on_ready(self):
         print(f"Bot está pronto, estou conectado como {self.user}")
@@ -23,17 +29,30 @@ class MonitorDiscordBot(commands.Bot):
 
         # Comando para parar a busca
         if message.content in ['!stop', '!parar']:
+
             if self.amazon_bot_instance:
                 self.amazon_bot_instance.stop_searching()
+
             if self.kabum_bot_instance:
                 self.kabum_bot_instance.stop_searching()
+
             if self.americanas_bot_instance:
                 self.americanas_bot_instance.stop_searching()
+
+            if self.ali_express_bot_instance:
+                self.ali_express_bot_instance.stop_searching()
+
             await message.channel.send("Busca interrompida.")
+
             # Resetar as instâncias para None depois de parar
             self.amazon_bot_instance = None
+
             self.kabum_bot_instance = None
+
             self.americanas_bot_instance = None
+
+            self.ali_express_bot_instance = None
+
             return
 
         # Comando para a BUSCA específica de um produto
@@ -55,18 +74,31 @@ class MonitorDiscordBot(commands.Bot):
 
             if "amazon" in site:
                 loop = asyncio.get_running_loop()
+
                 self.amazon_bot_instance = AmazonPriceBot(product, price, pages, message.author, loop, times)
+
                 await self.amazon_bot_instance.search_prices()
             
             elif "kabum" in site:
                 loop = asyncio.get_running_loop()
+
                 self.kabum_bot_instance = KabumPriceBot(product, price, pages, message.author, loop, times)
+
                 await self.kabum_bot_instance.search_prices()
 
             elif "americanas" in site:
                 loop = asyncio.get_running_loop()
+
                 self.americanas_bot_instance = AmericanasPriceBot(product, price, pages, message.author, loop, times)
+
                 await self.americanas_bot_instance.search_prices()
+
+            elif "aliexpress" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ali_express_bot_instance = AliExpressPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.ali_express_bot_instance.search_prices()
 
             await self.process_commands(message)
 
@@ -87,18 +119,31 @@ class MonitorDiscordBot(commands.Bot):
 
             if "kabum" in site:
                 loop = asyncio.get_running_loop()
+
                 self.kabum_bot_instance = KabumPriceBot(product, price, pages, message.author, loop, times)
+
                 await self.kabum_bot_instance.search_link_prices(link)
 
             elif "amazon" in site:
                 loop = asyncio.get_running_loop()
+
                 self.amazon_bot_instance = AmazonPriceBot(product, price, pages, message.author, loop, times)
+
                 await self.amazon_bot_instance.search_link_prices(link)
             
             elif "americanas" in site:
                 loop = asyncio.get_running_loop()
+
                 self.americanas_bot_instance = AmericanasPriceBot(product, price, pages, message.author, loop, times)
+
                 await self.americanas_bot_instance.search_link_prices(link)
+
+            elif "aliexpress" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ali_express_bot_instance = AliExpressPriceBot(product, price, pages, message.author, loop, times)
+                
+                await self.ali_express_bot_instance.search_link_prices(link)
 
             await self.process_commands(message)
 
@@ -119,17 +164,31 @@ class MonitorDiscordBot(commands.Bot):
 
             if "kabum" in site:
                 loop = asyncio.get_running_loop()
+
                 self.kabum_bot_instance = KabumPriceBot(product, price, None, message.author, loop, times)
+
                 await self.kabum_bot_instance.search_specific_product(link_produto, preco_limite)
             
             elif "amazon" in site:
                 loop = asyncio.get_running_loop()
+
                 self.amazon_bot_instance = AmazonPriceBot(product, price, None, message.author, loop, times)
+
                 await self.amazon_bot_instance.search_specific_product(link_produto, preco_limite)
             
             elif "americanas" in site:
                 loop = asyncio.get_running_loop()
+
                 self.americanas_bot_instance = AmericanasPriceBot(product, price, None, message.author, loop, times)
+
                 await self.americanas_bot_instance.search_specific_product(link_produto, preco_limite)   
+
+            elif "aliexpress" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ali_express_bot_instance = AliExpressPriceBot(product, price, None, message.author, loop, times)
+                
+                await self.ali_express_bot_instance.search_specific_product(link_produto, preco_limite)   
+
 
             await self.process_commands(message) 
