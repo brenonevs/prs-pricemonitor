@@ -189,6 +189,24 @@ class MonitorDiscordBot(commands.Bot):
                 self.ali_express_bot_instance = AliExpressPriceBot(product, price, None, message.author, loop, times)
                 
                 await self.ali_express_bot_instance.search_specific_product(link_produto, preco_limite)   
+            
+            await self.process_commands(message) 
+
+        elif re.search(r"!pesquisar_coupons\(site\s*=\s*\w+,\s*urls\s*=\s*\[.+?\]\)", message.content):
+            match = re.search(r"!pesquisar_coupons\(site\s*=\s*(\w+),\s*urls\s*=\s*\[(.+?)\]\)", message.content)
+            site = match.group(1).strip().lower()
+            urls = match.group(2).strip()
+
+            urls = urls.replace('"', '').split(', ')
+
+            await message.channel.send(f"Olá, {message.author.name}! Procurando cupons no(a) {site}.")
+
+            if "aliexpress" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ali_express_bot_instance = AliExpressPriceBot(None, None, None, message.author, loop, None)
+
+                await self.ali_express_bot_instance.search_for_coupons(urls)
 
 
             await self.process_commands(message) 
