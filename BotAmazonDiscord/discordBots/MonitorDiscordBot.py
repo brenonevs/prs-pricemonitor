@@ -7,6 +7,7 @@ from amazonPriceBot.amazonPriceBot import AmazonPriceBot
 from kabumPriceBot.kabumPriceBot import KabumPriceBot
 from americanasPriceBot.americanasPriceBot import AmericanasPriceBot
 from aliexpressPriceBot.aliexpressPriceBot import AliExpressPriceBot
+from casasbahiaPriceBot.casasbahiaPriceBot import CasasBahiaPriceBot
 
 class MonitorDiscordBot(commands.Bot):
     def __init__(self, command_prefix, intents):
@@ -19,6 +20,8 @@ class MonitorDiscordBot(commands.Bot):
         self.americanas_bot_instance = None
 
         self.ali_express_bot_instance = None
+
+        self.casas_bahia_bot_instance = None
 
     async def on_ready(self):
         print(f"Bot está pronto, estou conectado como {self.user}")
@@ -42,6 +45,9 @@ class MonitorDiscordBot(commands.Bot):
             if self.ali_express_bot_instance:
                 self.ali_express_bot_instance.stop_searching()
 
+            if self.casas_bahia_bot_instance:
+                self.casas_bahia_bot_instance.stop_searching()
+
             await message.channel.send("Busca interrompida.")
 
             # Resetar as instâncias para None depois de parar
@@ -52,6 +58,8 @@ class MonitorDiscordBot(commands.Bot):
             self.americanas_bot_instance = None
 
             self.ali_express_bot_instance = None
+
+            self.casas_bahia_bot_instance = None
 
             return
 
@@ -100,6 +108,13 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.ali_express_bot_instance.search_prices()
 
+            elif "casasbahia" in site:
+                loop = asyncio.get_running_loop()
+
+                self.casas_bahia_bot_instance = CasasBahiaPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.casas_bahia_bot_instance.search_prices()
+
             await self.process_commands(message)
 
          # Comando para monitorar um link de listagem de produtos
@@ -145,6 +160,13 @@ class MonitorDiscordBot(commands.Bot):
                 
                 await self.ali_express_bot_instance.search_link_prices(link)
 
+            elif "casasbahia" in site:
+                loop = asyncio.get_running_loop()
+
+                self.casas_bahia_bot_instance = CasasBahiaPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.casas_bahia_bot_instance.search_link_prices(link)
+
             await self.process_commands(message)
 
         elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?,\s*preco_limite\s*=\s*.+?\)", message.content):
@@ -189,8 +211,17 @@ class MonitorDiscordBot(commands.Bot):
                 self.ali_express_bot_instance = AliExpressPriceBot(product, price, None, message.author, loop, times)
                 
                 await self.ali_express_bot_instance.search_specific_product(link_produto, preco_limite)   
+
+            elif "casasbahia" in site:
+                loop = asyncio.get_running_loop()
+
+                self.casas_bahia_bot_instance = CasasBahiaPriceBot(product, price, None, message.author, loop, times)
+
+                await self.casas_bahia_bot_instance.search_specific_product(link_produto, preco_limite)
             
             await self.process_commands(message) 
+
+        # Comando para pesquisar cupons (Só funciona para o AliExpress)
 
         elif re.search(r"!pesquisar_coupons\(site\s*=\s*\w+,\s*urls\s*=\s*\[.+?\]\)", message.content):
             match = re.search(r"!pesquisar_coupons\(site\s*=\s*(\w+),\s*urls\s*=\s*\[(.+?)\]\)", message.content)
