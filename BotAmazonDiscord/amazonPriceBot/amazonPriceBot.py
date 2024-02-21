@@ -34,6 +34,8 @@ class AmazonPriceBot():
         self.loop = loop
         self.times = times
         self.stop_search = False  # Controle de interrupção
+        self.product_info = []
+        self.product_names = []
 
         # Configurações do navegador Chrome
         self.options = Options()
@@ -56,17 +58,26 @@ class AmazonPriceBot():
 
         self.driver = webdriver.Chrome(service=service, options=self.options)
 
-    async def notify_discord(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
-    async def notify_discord_about_monitoring(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_change_in_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring_new_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
     async def notify_discord_about_error(self):
         message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
         await self.user.send(message)
+
 
     # Método para realizar a pesquisa do produto na Amazon
     def search_product(self):
@@ -126,16 +137,50 @@ class AmazonPriceBot():
 
                     price = float(price_str)
 
-                    if self.expected_price == None:
-                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
-                        
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+                    product_data = {
+                        "titulo": title,
+                        "preço": price,
+                        "url": product["url"]
+                    }
 
-                    elif price <= self.expected_price:
+                    if product_data["titulo"] not in self.product_names:
+                        self.product_names.append(product_data["titulo"])
+                        self.product_info.append(product_data)
 
-                        asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
+                        if self.expected_price == None:
+                            
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
+                            
+                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+                        elif price <= self.expected_price:
+
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
+
+                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+
+                    else:
+                        for product in self.product_info:
+
+                            if product["titulo"] == product_data["titulo"]:
+
+                                if product["preço"] != product_data["preço"]:
+
+                                    product["preço"] = product_data["preço"]
+
+                                    if self.expected_price == None:
+                                        
+                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
+                                        
+                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
+
+                                    elif price <= self.expected_price:
+
+                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
+
+                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
+                    
+
 
                 except NoSuchElementException:
                     try:
@@ -151,16 +196,52 @@ class AmazonPriceBot():
 
                         price = float(f"{price_whole}.{price_fraction}")
                         print(f"Preço encontrado para '{title}': ${price}")
-                        if self.expected_price == None:
-                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
+
+                        product_data = {
+                            "titulo": title,
+                            "preço": price,
+                            "url": product["url"]
+                        }
+
+                        print(product_data)
+
+                        if product_data["titulo"] not in self.product_names:
+                            self.product_names.append(product_data["titulo"])
+                            self.product_info.append(product_data)
+                        
+                            if self.expected_price == None:
+                                
+                                asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
+                                
+                                print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+
+                            elif price <= self.expected_price:
+
+                                asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
+
+                                print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+
+                        else:
+                            for product in self.product_info:
+
+                                if product["titulo"] == product_data["titulo"]:
+
+                                    if product["preço"] != product_data["preço"]:
+
+                                        product["preço"] = product_data["preço"]
+
+                                        if self.expected_price == None:
+                                            
+                                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
+                                            
+                                            print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
+
+                                        elif price <= self.expected_price:
+
+                                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
+
+                                            print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
                             
-                            print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
-
-                        elif price <= self.expected_price:
-
-                            asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
-
-                            print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
                     except NoSuchElementException:
                         print(f"Não foi possível encontrar o preço para {title}. Site pode estar fora do ar.\n")
                         continue
@@ -175,7 +256,6 @@ class AmazonPriceBot():
         except Exception as e:
             print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}. Site pode estar fora do ar.")
 
-        print(self.priceList)
         return self.priceList
 
     # Método para navegar para a próxima página de resultados

@@ -34,12 +34,14 @@ class CasasBahiaPriceBot():
         self.loop = loop
         self.times = times
         self.stop_search = False  # Controle de interrupção
+        self.processed_links = set()  # Conjunto para armazenar URLs já processados neste ciclo
+        self.product_info = {}  # Dicionário para armazenar informações dos produtos
 
         # Configurações do navegador Chrome
         self.options = Options() 
         self.user_agent = userAgent
         self.options.add_argument(f'user-agent={self.user_agent}')
-        self.options.add_argument('--headless')
+        #self.options.add_argument('--headless')
         self.options.add_argument('--disable-gpu')
         self.options.add_argument('--window-size=1920x1080')
         self.options.add_argument('--disable-dev-shm-usage')
@@ -55,12 +57,21 @@ class CasasBahiaPriceBot():
 
         self.driver = webdriver.Chrome(service=service, options=self.options)
 
-    async def notify_discord(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
-    async def notify_discord_about_monitoring(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_change_in_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+
+    async def notify_discord_about_monitoring_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring_new_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
     async def notify_discord_about_error(self):
@@ -75,14 +86,12 @@ class CasasBahiaPriceBot():
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
-        processed_links = set()  # Conjunto para armazenar URLs já processados
-        product_links = []
+
         scrolls = 5
 
         try:
             for scroll in range(scrolls):
                 self.driver.execute_script("window.scrollBy(0, 200)")
-
                 sleep(1)  # Espera para a página carregar mais itens
                     
                 # Verifica novos product cards
@@ -90,40 +99,63 @@ class CasasBahiaPriceBot():
                 for card in product_cards:
                     link_element = card.find_element(By.CSS_SELECTOR, "h3.product-card__title a").get_attribute('href')
 
-                    if link_element in processed_links:
-                        continue  # Ignora se o produto já foi processado
+                    if link_element in self.processed_links:
+                        continue  # Ignora se o produto já foi processado neste ciclo
 
-                    processed_links.add(link_element)
+                    self.processed_links.add(link_element)
                     title_element = card.find_element(By.CSS_SELECTOR, "h3.product-card__title a")
                     price_element = card.find_element(By.CSS_SELECTOR, "div.product-card__highlight-price")
                     title = title_element.text.strip()
                     price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
                     price = float(price_text)
 
-                    product_links.append({
+                    product_data = {
                         "title": title,
-                        "preço": price,
+                        "price": price,
                         "url": link_element
-                    })
+                    }
 
-                    if self.expected_price == None:
-                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link_element), self.loop)
+                    # Verifica se o produto já foi processado antes e se o preço mudou
+                    if link_element in self.product_info:
+
+                        if self.product_info[link_element]['price'] != price:
+
+                            self.product_info[link_element]['price'] = price
                             
-                        print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
+                            if self.expected_price == None:
 
-                    elif price <= self.expected_price:
+                                asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(title, price, link_element), self.loop)
+                                    
+                                print(f"Preço mudou para '{title}' \nPreço: R${price}\n\n")
 
-                        asyncio.run_coroutine_threadsafe(self.notify_discord(title, price, link_element), self.loop)
+                            elif price <= self.expected_price:
 
-                        print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
-                        
-            print(f"Encontrados {len(product_links)} produtos.")
+                                asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(title, price, link_element), self.loop)
 
+                                print(f"Preço mudou para '{title}' \nPreço: R${price}\n\n")
+                    else:
+                        # Novo produto encontrado
+                        if self.expected_price == None:
+                            
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(title, price, link_element), self.loop)
+                                
+                            print(f"Novo Preço encontrado para '{title}' \nPreço: R${price}\n\n")
+
+                        elif price <= self.expected_price:
+
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(title, price, link_element), self.loop)
+
+                            print(f"Novo Preço encontrado para '{title}' \nPreço: R${price}\n\n")
+
+                    # Atualiza as informações do produto no dicionário
+                    self.product_info[link_element] = product_data
+                            
+            print(f"Encontrados {len(self.product_info)} produtos.")
 
         except Exception as e:
             print(f"Ocorreu um erro ao buscar produtos: {e}")
 
-        self.priceList = product_links
+        self.priceList = list(self.product_info.values())
         print(self.priceList)
         return self.priceList
     
@@ -344,7 +376,3 @@ class CasasBahiaPriceBot():
         df = pd.DataFrame(self.priceList)
         df = df.dropna(how='all')
         df.to_csv(f"{self.search_query}.csv", index=False)
-
-if __name__ == "__main__":
-    bot = CasasBahiaPriceBot("smartphone", 100000, 4, None, None, "indeterminado")
-    bot.check_specific_product("https://www.casasbahia.com.br/iphone-13-apple-128gb-estelar-tela-de-61-camera-dupla-de-12mp/p/55048759?utm_source=gp_branding&utm_medium=cpc&utm_campaign=gg_brd_inst_cb_exata", 10000)

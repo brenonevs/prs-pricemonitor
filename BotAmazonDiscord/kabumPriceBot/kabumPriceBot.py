@@ -34,12 +34,15 @@ class KabumPriceBot():
         self.loop = loop
         self.times = times
         self.stop_search = False  # Controle de interrupção
+        self.processed_links = set()  # Conjunto para armazenar URLs já processados neste ciclo
+        self.products_info = []
+
 
         # Configurações do navegador Chrome
         self.options = Options() 
-        user_agent = userAgent
-        self.options.add_argument(f'user-agent={user_agent}')
-        #options.add_argument('--headless')
+        self.user_agent = userAgent
+        self.options.add_argument(f'user-agent={self.user_agent}')
+        #self.options.add_argument('--headless')
         self.options.add_argument('--disable-gpu')
         self.options.add_argument('--window-size=1920x1080')
         self.options.add_argument('--disable-dev-shm-usage')
@@ -55,12 +58,21 @@ class KabumPriceBot():
 
         self.driver = webdriver.Chrome(service=service, options=self.options)
 
-    async def notify_discord(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
-    async def notify_discord_about_monitoring(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_change_in_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+
+    async def notify_discord_about_monitoring_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring_new_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
     async def notify_discord_about_error(self):
@@ -96,6 +108,7 @@ class KabumPriceBot():
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
         product_links = []
+        
         try:
             # Obtém os links dos produtos na página atual
             product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.sc-cdc9b13f-7.gHEmMz.productCard a")
@@ -128,16 +141,51 @@ class KabumPriceBot():
 
                     product["preço"] = price
 
-                    if self.expected_price == None:
-                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product['title'], price, product["url"]), self.loop)
-                        
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+                    product_data = {
+                        "title": product["title"],
+                        "preço": product["preço"],
+                        "url": product["url"]
+                    }
 
-                    elif price <= self.expected_price:
+                    # Verifica se o produto já foi processado
 
-                        asyncio.run_coroutine_threadsafe(self.notify_discord(product['title'], price, product["url"]), self.loop)
+                    if product_data not in self.products_info:
+                        # Adiciona o produto à lista de produtos
+                        self.products_info.append(product_data)
 
-                        print(f"Preço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+                        if self.expected_price == None:
+                            
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
+                            
+                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
+
+                        elif price <= self.expected_price:
+
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
+
+                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")                        
+                    
+                    else:
+                        # Verifica se o preço do produto mudou
+                        for product in self.products_info:
+
+                            if product["title"] == product_data["title"]:
+
+                                if product["preço"] != product_data["preço"]:
+
+                                    product["preço"] = product_data["preço"]
+
+                                    if self.expected_price == None:
+                                        
+                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
+                                        
+                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
+
+                                    elif price <= self.expected_price:
+
+                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
+
+                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")                                    
 
                 except NoSuchElementException:
                     print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")

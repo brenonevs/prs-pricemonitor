@@ -41,6 +41,8 @@ class AliExpressPriceBot():
         self.stop_search = False  # Controle de interrupção
         self.coupon_list = {}
         self.cookies_path = 'cookies.pkl'
+        self.priceListInformation = []
+        self.products_names = []
 
         # Configurações do navegador Chrome
         self.options = Options() 
@@ -62,12 +64,21 @@ class AliExpressPriceBot():
 
         self.driver = webdriver.Chrome(service=service, options=self.options)
 
-    async def notify_discord(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
-    async def notify_discord_about_monitoring(self, title, price, url):
-        message = "-" * 70 + f"\n\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+    async def notify_discord_about_change_in_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço**\n**Produto:** {title}\n**Preço Abaixo do Esperado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+
+    async def notify_discord_about_monitoring_new_product(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Novo Produto!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
+        await self.user.send(message)
+
+    async def notify_discord_about_monitoring_new_price(self, title, price, url):
+        message = "-" * 70 + f"\n\n**Mudança no preço!**\n**Produto:** {title}\n**Preço Monitorado:** ${price}\n**Link:** {url}\n\n" + "-" * 70
         await self.user.send(message)
 
     async def notify_discord_about_error(self):
@@ -91,7 +102,6 @@ class AliExpressPriceBot():
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
-        self.priceListInformation = []
 
         try:
             self.driver.fullscreen_window()
@@ -128,7 +138,8 @@ class AliExpressPriceBot():
                         'price': product_price
                     }
 
-                    if product_info not in self.priceListInformation:
+                    if product_info['title'] not in self.products_names:
+                        self.products_names.append(product_info['title'])
                         self.priceListInformation.append(product_info)
 
                         try:
@@ -138,11 +149,39 @@ class AliExpressPriceBot():
                             continue
 
                         if self.expected_price is None:
-                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(product_info['title'], price, product_info["link"]), self.loop)
-                            print(f"Preço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product_info['title'], price, product_info["link"]), self.loop)
+
+                            print(f"Novo Produto!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+
                         elif price <= self.expected_price:
-                            asyncio.run_coroutine_threadsafe(self.notify_discord(product_info['title'], price, product_info["link"]), self.loop)
-                            print(f"Preço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product_info['title'], price, product_info["link"]), self.loop)
+
+                            print(f"Novo Produto!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+
+                    else:
+                        for product in self.priceListInformation:
+                            if product_info['link'] == product['link'] and product_info['price'] != product['price']:
+                                try:
+                                    price = float(product_info['price'].replace('R$', '').replace('.', '').replace(',', '.').strip())
+                                except ValueError:
+                                    print(f"Erro ao converter o preço do produto '{product_info['title']}'. Preço encontrado: '{product_info['price']}'")
+                                    continue
+
+                                product['price'] = product_info['price']
+
+                                if self.expected_price is None:
+                                        
+                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product_info['title'], price, product_info["link"]), self.loop)
+    
+                                        print(f"Novo Preço!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+                                
+                                elif price <= self.expected_price:
+                                        
+                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product_info['title'], price, product_info["link"]), self.loop)
+    
+                                        print(f"Novo Preço!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
 
                 try:
                     self.driver.execute_script(f"window.scrollBy(0, {scroll_increment});")
