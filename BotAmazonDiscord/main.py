@@ -21,3 +21,4 @@ bot = MonitorDiscordBot(command_prefix="!", intents=intents)
 # Inicia o bot e o conecta ao servidor Discord
 bot.run(bot_id)
 
+    

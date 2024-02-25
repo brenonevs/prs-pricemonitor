@@ -422,12 +422,12 @@ class AmazonPriceBot():
                     last_price = price
 
                 if first_notification:
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(title, price, link), self.loop)
                     first_notification = False
 
                 # Condição para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
                 if price < last_price or (price < expected_price and not notified_for_price_drop):
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
                     notified_for_price_drop = True

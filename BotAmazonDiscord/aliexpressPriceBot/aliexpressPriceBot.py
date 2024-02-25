@@ -119,6 +119,11 @@ class AliExpressPriceBot():
                 except WebDriverException as e:
                     print(f"Erro do WebDriver: {e}")
                     break
+                
+                except Exception as e:
+                    print(f"Erro geral ao tentar encontrar os cartões de produto: {e}")
+                    break
+
 
                 for card in product_cards:
                     if self.stop_search:
@@ -130,6 +135,9 @@ class AliExpressPriceBot():
                         product_price = card.find_element(By.CSS_SELECTOR, "div.multi--price-sale--U-S0jtj").text
                     except NoSuchElementException:
                         print("Erro: Não foi possível encontrar um ou mais elementos do cartão de produto.")
+                        continue
+                    except Exception as e:
+                        print(f"Erro geral ao tentar encontrar os elementos do cartão de produto: {e}")
                         continue
 
                     product_info = {
@@ -162,7 +170,7 @@ class AliExpressPriceBot():
 
                     else:
                         for product in self.priceListInformation:
-                            if product_info['link'] == product['link'] and product_info['price'] != product['price']:
+                            if product_info['title'] == product['title'] and product_info['price'] != product['price']:
                                 try:
                                     price = float(product_info['price'].replace('R$', '').replace('.', '').replace(',', '.').strip())
                                 except ValueError:
@@ -374,12 +382,12 @@ class AliExpressPriceBot():
                     last_price = price
 
                 if first_notification:
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(title, price, link), self.loop)
                     print(f"\n\nProduto: {title}\nPreço: R${price}\nLink: {link}\n\n")
                     first_notification = False
 
                 if price < last_price or (price < expected_price and not notified_for_price_drop):
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring(title, price, link), self.loop)
+                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(title, price, link), self.loop)
                     print(f"\n\nProduto: {title}\nPreço: R${price}\nLink: {link}\n\n")
                     last_price = price
                     notified_for_price_drop = True
