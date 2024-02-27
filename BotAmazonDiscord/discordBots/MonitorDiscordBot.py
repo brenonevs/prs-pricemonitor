@@ -9,6 +9,7 @@ from americanasPriceBot.americanasPriceBot import AmericanasPriceBot
 from aliexpressPriceBot.aliexpressPriceBot import AliExpressPriceBot
 from casasbahiaPriceBot.casasbahiaPriceBot import CasasBahiaPriceBot
 from terabytePriceBot.terabytePriceBot import TerabytePriceBot
+from carrefourPriceBot.carrefourPriceBot import CarrefourPriceBot
 
 
 class MonitorDiscordBot(commands.Bot):
@@ -26,6 +27,8 @@ class MonitorDiscordBot(commands.Bot):
         self.casas_bahia_bot_instance = None
 
         self.terabyte_bot_instance = None
+
+        self.carrefour_bot_instance = None
 
     async def on_ready(self):
         print(f"Bot está pronto, estou conectado como {self.user}")
@@ -55,6 +58,9 @@ class MonitorDiscordBot(commands.Bot):
             if self.terabyte_bot_instance:
                 self.terabyte_bot_instance.stop_searching()
 
+            if self.carrefour_bot_instance:
+                self.carrefour_bot_instance.stop_searching()
+
             await message.channel.send("Busca interrompida.")
 
             # Resetar as instâncias para None depois de parar
@@ -69,6 +75,8 @@ class MonitorDiscordBot(commands.Bot):
             self.casas_bahia_bot_instance = None
 
             self.terabyte_bot_instance = None
+
+            self.carrefour_bot_instance = None
 
             return
 
@@ -131,6 +139,13 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.terabyte_bot_instance.search_prices()
 
+            elif "carrefour" in site:
+                loop = asyncio.get_running_loop()
+
+                self.carrefour_bot_instance = CarrefourPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.carrefour_bot_instance.search_prices()
+
             await self.process_commands(message)
 
          # Comando para monitorar um link de listagem de produtos
@@ -190,6 +205,13 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.terabyte_bot_instance.search_link_prices(link)
 
+            elif "carrefour" in site:
+                loop = asyncio.get_running_loop()
+
+                self.carrefour_bot_instance = CarrefourPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.carrefour_bot_instance.search_link_prices(link)
+
             await self.process_commands(message)
 
         elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?,\s*preco_limite\s*=\s*.+?\)", message.content):
@@ -248,6 +270,13 @@ class MonitorDiscordBot(commands.Bot):
                 self.terabyte_bot_instance = TerabytePriceBot(product, price, None, message.author, loop, times)
 
                 await self.terabyte_bot_instance.search_specific_product(link_produto, preco_limite)
+
+            elif "carrefour" in site:
+                loop = asyncio.get_running_loop()
+
+                self.carrefour_bot_instance = CarrefourPriceBot(product, price, None, message.author, loop, times)
+
+                await self.carrefour_bot_instance.search_specific_product(link_produto, preco_limite)
             
             await self.process_commands(message) 
 

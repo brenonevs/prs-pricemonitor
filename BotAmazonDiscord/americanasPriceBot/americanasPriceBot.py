@@ -83,7 +83,7 @@ class AmericanasPriceBot():
 
     # Método para realizar a pesquisa do produto na Americanas
     def search_product(self):
-        search_url = f"https://www.americanas.com.br/busca/{self.search_query}"
+        search_url = f"{self.url}/busca/{self.search_query}"
         if " " in self.search_query:
             self.search_query = self.search_query.replace(" ", "-")
         self.driver.get(search_url)
