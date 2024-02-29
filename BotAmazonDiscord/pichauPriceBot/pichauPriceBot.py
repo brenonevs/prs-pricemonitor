@@ -37,7 +37,7 @@ class PichauPriceBot():
         self.stop_search = False  # Controle de interrupção
         self.processed_links = set()  # Conjunto para armazenar URLs já processados neste ciclo
         self.products_info = []
-
+        self.products_names = []
 
         # Configurações do navegador Chrome
         self.options = Options() 
@@ -49,10 +49,11 @@ class PichauPriceBot():
         self.options.add_argument('--disable-dev-shm-usage')
         self.options.add_argument('--no-sandbox')
         self.options.add_argument('--ignore-certificate-errors')
-        self.options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        self.options.add_experimental_option('excludeSwitches', ['enable-logging']  )
         self.options.add_argument('--disable-blink-features=AutomationControlled')
         self.options.add_argument('--disable-extensions')
         self.options.add_argument('--disable-images')
+        self.options.add_experimental_option("excludeSwitches", ['enable-automation'])
 
         service = Service(ChromeDriverManager().install())
         service.log_path = 'NUL'
@@ -82,128 +83,138 @@ class PichauPriceBot():
 
     # Método para realizar a pesquisa do produto na Pichau
     def search_product(self):
+        if " " in self.search_query:
+            self.search_query = self.search_query.replace(" ", "%20")
         search_url = f"{self.url}/search?q={self.search_query}"
         self.driver.get(search_url)
+        self.driver.fullscreen_window()
         sleep(1)
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
-        product_links = []
-
         try:
-            # Atualiza o seletor CSS para os novos product_cards
-            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.MuiGrid-root a.jss110")
+            self.driver.fullscreen_window()
+            sleep(1)
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            sleep(1)
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            sleep(1)
+            try:
+                product_cards = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'MuiGrid-root') and contains(@class, 'MuiGrid-item')]/a[contains(@class, 'jss16')]")
+                print(f"Encontrados {len(product_cards)} cartões de produto na página.")
+            except NoSuchElementException:
+                print("Erro: Não foi possível encontrar os cartões de produto na página.")
+            except WebDriverException as e:
+                print(f"Erro do WebDriver")
+            except Exception as e:
+                print(f"Erro geral ao tentar encontrar os cartões de produto")
+
             for card in product_cards:
-                product_links.append({
-                    "url": card.get_attribute('href')
-                })
-
-            print(f"Encontrados {len(product_links)} produtos na página atual.")
-
-            for product in product_links:
-                if self.stop_search:  # Verificar antes de cada ação
+                if self.stop_search:
                     break
-                self.driver.get(product["url"])
-                sleep(1)
 
                 try:
-                    # Atualiza o seletor CSS para o novo título do produto
-                    title_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.MuiTypography-root.jss446"))
+                    product_link = card.get_attribute('href')
+                except Exception as e:
+                    print(f"Erro ao tentar encontrar o link do produto")
+                    continue
+
+                try: 
+                    title_element = WebDriverWait(card, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "h2.MuiTypography-root"))
                     )
-                    product["title"] = title_element.text
+                    product_title = title_element.text if title_element else "Título não encontrado"
+                except Exception as e:
+                    print(f"Erro ao tentar encontrar o título do produto")
+                    continue
 
-                    # Atualiza o seletor CSS para o novo preço do produto
-                    price_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "div.jss476"))
+                try:
+                    price_element = WebDriverWait(card, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.jss83"))
                     )
-                    price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
-                    price = float(price_text)
-
-                    product["preço"] = price
-
-                    product_data = {
-                        "title": product["title"],
-                        "preço": product["preço"],
-                        "url": product["url"]
-                    }
-
-                    # Verifica se o produto já foi processado
-
-                    if product_data not in self.products_info:
-                        # Adiciona o produto à lista de produtos
-                        self.products_info.append(product_data)
-
-                        if self.expected_price == None:
-                            
-                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
-                            
-                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
-
-                        elif price <= self.expected_price:
-
-                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
-
-                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")                        
-                    
-                    else:
-                        # Verifica se o preço do produto mudou
-                        for product in self.products_info:
-
-                            if product["title"] == product_data["title"]:
-
-                                if product["preço"] != product_data["preço"]:
-
-                                    product["preço"] = product_data["preço"]
-
-                                    if self.expected_price == None:
-                                        
-                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
-                                        
-                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
-
-                                    elif price <= self.expected_price:
-
-                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
-
-                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")                                    
-
-                except NoSuchElementException:
-                    print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")
+                    price_text = price_element.text
+                except Exception as e:
+                    print(f"Erro ao tentar encontrar o preço do produto")
                     continue
-                except ValueError:
-                    print(f"Formato de preço inválido para '{product['title']}'")
-                    continue
-                except TimeoutException:
-                    print(f"O tempo de espera excedeu enquanto procurava pelo título ou preço de '{product['title']}'")
-                    continue
+
+                product_info = {
+                    "link": product_link,
+                    "title": product_title,
+                    "price": price_text
+                }
+
+                if product_info['title'] not in self.products_names:
+                    self.products_names.append(product_info['title'])
+                    self.products_info.append(product_info)
+
+                    try:
+                        price = float(price_text.replace('R$', '').replace('.', '').replace(',', '.').strip())
+                    except ValueError:
+                        print(f"Erro ao converter o preço do produto '{product_title}'. Preço encontrado: '{price_text}'")
+                        continue
+
+                    if self.expected_price is None:
+                        try:
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product_info['title'], price, product_info["link"]), self.loop)
+                            print(f"Novo Produto!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+                        except Exception as e:
+                            print(f"Erro ao notificar sobre o novo produto")
+                    elif price <= self.expected_price:
+                        try:
+                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product_info['title'], price, product_info["link"]), self.loop)
+                            print(f"Novo Produto!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+                        except Exception as e:
+                            print(f"Erro ao notificar sobre o novo produto")
+                else:
+                    for product in self.products_info:
+                        if product_info['title'] == product['title'] and product_info['price'] != product['price']:
+                            try:
+                                price = float(product_info['price'].replace('R$', '').replace('.', '').replace(',', '.').strip())
+                            except ValueError:
+                                print(f"Erro ao converter o preço do produto '{product_info['title']}'. Preço encontrado: '{product_info['price']}'")
+                                continue
+
+                            product['price'] = product_info['price']
+
+                            if self.expected_price is None:
+                                try:
+                                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product_info['title'], price, product_info["link"]), self.loop)
+                                    print(f"Novo Preço!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+                                except Exception as e:
+                                    print(f"Erro ao notificar sobre o novo preço")
+                            elif price <= self.expected_price:
+                                try:
+                                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product_info['title'], price, product_info["link"]), self.loop)
+                                    print(f"Novo Preço!\nPreço encontrado para '{product_info['title']}' \nPreço: R${price}\n\n")
+                                except Exception as e:
+                                    print(f"Erro ao notificar sobre o novo preço")
 
         except Exception as e:
-            print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}")
+            print(f"Erro geral na busca de produtos e preços")
 
-        # Armazena e retorna a lista de produtos e preços
-        self.priceList = product_links
-        print(self.priceList)
-        return self.priceList
+        return self.products_info
 
     # Método para navegar para a próxima página de resultados
     def next_page(self):
         try:
-            # Encontra o botão de próxima página usando o seletor CSS atualizado
-            next_page_button = self.driver.find_element(By.CSS_SELECTOR, ".MuiButtonBase-root.MuiPaginationItem-root.MuiPaginationItem-page.MuiPaginationItem-textPrimary.MuiPaginationItem-sizeLarge[aria-label='Go to next page']")
+            self.driver.execute_script("window.scrollBy(0, 2400);")
+            sleep(5)
+            # Encontra o botão de próxima página usando o seletor CSS para o ícone SVG
+            print("\nTentando encontrar o botão de próxima página...\n")
 
-            # Verifica se o botão está habilitado para clique
-            if "alguma-classe-de-desativado" not in next_page_button.get_attribute("class"):
-                next_page_button.click()
-                return True
-            else:
-                print("Botão de próxima página está desabilitado.")
-                return False
+            next_page_button = self.driver.find_element(By.XPATH, "//*[@id='__next']/main/div[2]/div/div[1]/nav/ul/li[9]/button")
+
+            next_page_button.click()
+
+            print("\nClicou no botão de próxima página.\n")
+
+            return True
+
         except NoSuchElementException:
             print("O botão de próxima página não foi encontrado.")
             return False
         except Exception as e:
-            print(f"Ocorreu um erro ao tentar ir para a próxima página: {e}")
+            print(f"Ocorreu um erro ao tentar ir para a próxima página")
             return False
 
     def stop_searching(self):
@@ -214,42 +225,35 @@ class PichauPriceBot():
         if self.times == "indeterminado":
             while not self.stop_search:
                 self.restart_driver()
-                self.driver.get(self.url)
                 sleep(0.7)
                 self.search_product()
                 sleep(1)
-                search_url = self.driver.current_url
 
                 for _ in range(self.pages):
                     if self.stop_search:
                         break
                     self.check_prices()
                     sleep(1)
-                    self.driver.get(search_url)
                     if not self.next_page():
                         break
-                    search_url = self.driver.current_url
                     sleep(1)
         else:
             for _ in range(self.times):
                 if self.stop_search:
                     break
+                self.next_page_counter = 2
                 self.restart_driver()
-                self.driver.get(self.url)
                 sleep(0.7)
                 self.search_product()
                 sleep(1)
-                search_url = self.driver.current_url
 
                 for _ in range(self.pages):
                     if self.stop_search:
                         break
                     self.check_prices()
                     sleep(1)
-                    self.driver.get(search_url)
                     if not self.next_page():
                         break
-                    search_url = self.driver.current_url
                     sleep(1)
         
         self.driver.quit()
@@ -262,17 +266,14 @@ class PichauPriceBot():
                 self.restart_driver()
                 self.driver.get(link)
                 sleep(0.7)
-                search_url = self.driver.current_url
 
                 for _ in range(self.pages):
                     if self.stop_search:
                         break
                     self.check_prices()
                     sleep(1)
-                    self.driver.get(search_url)
                     if not self.next_page():
                         break
-                    search_url = self.driver.current_url
                     sleep(1)
         else:
             for _ in range(self.times):
@@ -281,19 +282,14 @@ class PichauPriceBot():
                 self.restart_driver()
                 self.driver.get(link)
                 sleep(0.7)
-                self.search_product()
-                sleep(1)
-                search_url = self.driver.current_url
 
                 for _ in range(self.pages):
                     if self.stop_search:
                         break
                     self.check_prices()
                     sleep(1)
-                    self.driver.get(search_url) 
                     if not self.next_page():
                         break
-                    search_url = self.driver.current_url
                     sleep(1)
         
         self.driver.quit()
@@ -319,25 +315,27 @@ class PichauPriceBot():
                 # Tente carregar a página
                 self.restart_driver()
                 self.driver.get(link)
-                sleep(1)
+                self.driver.fullscreen_window()
+
+                sleep(2)
             except TimeoutException:
                 # Se ocorrer um timeout, recarregue a página e vá para a próxima iteração
                 print(f"Timeout ao carregar {link}, tentando recarregar.")
                 try:
                     self.driver.refresh()
                 except Exception as e:
-                    print(f"Erro ao tentar recarregar a página: {e}")
+                    print(f"Erro ao tentar recarregar a página")
                     continue  # Pula para a próxima iteração do loop
                 continue
 
             try:
-                # Tenta localizar o título do produto
-                title_element = self.driver.find_element(By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD")
+                # Localizar o título do produto com o novo seletor
+                title_element = self.driver.find_element(By.CSS_SELECTOR, "h1.MuiTypography-root.jss39.MuiTypography-h6")
                 title = title_element.text
 
-                # Tenta localizar o preço do produto
-                price_element = self.driver.find_element(By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice")
-                price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
+                # Localizar o preço do produto com o novo seletor
+                price_element = self.driver.find_element(By.CSS_SELECTOR, "div.jss88")
+                price_text = price_element.text.replace('R$', '').replace('&nbsp;', '').replace('.', '').replace(',', '.').strip()
 
                 price = float(price_text)
 
@@ -375,7 +373,7 @@ class PichauPriceBot():
     async def search_specific_product(self, link, expected_price):
         await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link, expected_price)
 
-    async def search_prices(self):
+    async def search_prices(self): 
         await asyncio.get_event_loop().run_in_executor(None, self.search_prices_sync)
 
     async def search_link_prices(self, link):
@@ -386,8 +384,3 @@ class PichauPriceBot():
         df = pd.DataFrame(self.priceList)
         df = df.dropna(how='all')
         df.to_csv(f"{self.search_query}.csv", index=False)
-
-if __name__ == "__main__":
-    # Cria um novo bot
-    bot = PichauPriceBot("rtx 3060", 3000, 1, None, None, "indeterminado")
-    bot.search_prices_sync()

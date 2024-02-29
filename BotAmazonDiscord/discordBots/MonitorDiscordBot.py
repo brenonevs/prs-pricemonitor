@@ -10,6 +10,7 @@ from aliexpressPriceBot.aliexpressPriceBot import AliExpressPriceBot
 from casasbahiaPriceBot.casasbahiaPriceBot import CasasBahiaPriceBot
 from terabytePriceBot.terabytePriceBot import TerabytePriceBot
 from carrefourPriceBot.carrefourPriceBot import CarrefourPriceBot
+from pichauPriceBot.pichauPriceBot import PichauPriceBot
 
 
 class MonitorDiscordBot(commands.Bot):
@@ -29,6 +30,9 @@ class MonitorDiscordBot(commands.Bot):
         self.terabyte_bot_instance = None
 
         self.carrefour_bot_instance = None
+
+        self.pichau_bot_instance = None
+        
 
     async def on_ready(self):
         print(f"Bot está pronto, estou conectado como {self.user}")
@@ -61,6 +65,9 @@ class MonitorDiscordBot(commands.Bot):
             if self.carrefour_bot_instance:
                 self.carrefour_bot_instance.stop_searching()
 
+            if self.pichau_bot_instance:
+                self.pichau_bot_instance.stop_searching()
+
             await message.channel.send("Busca interrompida.")
 
             # Resetar as instâncias para None depois de parar
@@ -77,6 +84,8 @@ class MonitorDiscordBot(commands.Bot):
             self.terabyte_bot_instance = None
 
             self.carrefour_bot_instance = None
+
+            self.pichau_bot_instance = None
 
             return
 
@@ -146,6 +155,13 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.carrefour_bot_instance.search_prices()
 
+            elif "pichau" in site:
+                loop = asyncio.get_running_loop()
+
+                self.pichau_bot_instance = PichauPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.pichau_bot_instance.search_prices()
+
             await self.process_commands(message)
 
          # Comando para monitorar um link de listagem de produtos
@@ -212,6 +228,13 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.carrefour_bot_instance.search_link_prices(link)
 
+            elif "pichau" in site:
+                loop = asyncio.get_running_loop()
+
+                self.pichau_bot_instance = PichauPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.pichau_bot_instance.search_link_prices(link)
+
             await self.process_commands(message)
 
         elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?,\s*preco_limite\s*=\s*.+?\)", message.content):
@@ -277,7 +300,14 @@ class MonitorDiscordBot(commands.Bot):
                 self.carrefour_bot_instance = CarrefourPriceBot(product, price, None, message.author, loop, times)
 
                 await self.carrefour_bot_instance.search_specific_product(link_produto, preco_limite)
-            
+
+            elif "pichau" in site:
+                loop = asyncio.get_running_loop()
+
+                self.pichau_bot_instance = PichauPriceBot(product, price, None, message.author, loop, times)
+
+                await self.pichau_bot_instance.search_specific_product(link_produto, preco_limite)            
+
             await self.process_commands(message) 
 
         # Comando para pesquisar cupons (Só funciona para o AliExpress)
