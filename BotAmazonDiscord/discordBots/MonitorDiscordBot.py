@@ -12,6 +12,8 @@ from terabytePriceBot.terabytePriceBot import TerabytePriceBot
 from carrefourPriceBot.carrefourPriceBot import CarrefourPriceBot
 from pichauPriceBot.pichauPriceBot import PichauPriceBot
 from mercadoLivrePriceBot.mercadoLivrePriceBot import MercadoLivrePriceBot
+from pontofrioPriceBot.pontofrioPriceBot import PontoFrioPriceBot
+from extraPriceBot.extraPriceBot import ExtraPriceBot
 
 
 class MonitorDiscordBot(commands.Bot):
@@ -35,6 +37,10 @@ class MonitorDiscordBot(commands.Bot):
         self.pichau_bot_instance = None
 
         self.mercado_livre_bot_instance = None
+
+        self.ponto_frio_bot_instance = None
+
+        self.extra_bot_instance = None
         
 
     async def on_ready(self):
@@ -74,6 +80,12 @@ class MonitorDiscordBot(commands.Bot):
             if self.mercado_livre_bot_instance:
                 self.mercado_livre_bot_instance.stop_searching()
 
+            if self.ponto_frio_bot_instance:
+                self.ponto_frio_bot_instance.stop_searching()
+
+            if self.extra_bot_instance:
+                self.extra_bot_instance.stop_searching()
+
             await message.channel.send("Busca interrompida.")
 
             # Resetar as instâncias para None depois de parar
@@ -94,6 +106,10 @@ class MonitorDiscordBot(commands.Bot):
             self.pichau_bot_instance = None
 
             self.mercado_livre_bot_instance = None
+
+            self.ponto_frio_bot_instance = None
+
+            self.extra_bot_instance = None
 
             return
 
@@ -177,6 +193,20 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.mercado_livre_bot_instance.search_prices()
 
+            elif "pontofrio" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ponto_frio_bot_instance = PontoFrioPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.ponto_frio_bot_instance.search_prices()
+
+            elif "extra" in site:
+                loop = asyncio.get_running_loop()
+
+                self.extra_bot_instance = ExtraPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.extra_bot_instance.search_prices()
+
             await self.process_commands(message)
 
          # Comando para monitorar um link de listagem de produtos
@@ -257,6 +287,20 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.mercado_livre_bot_instance.search_link_prices(link)
 
+            elif "pontofrio" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ponto_frio_bot_instance = PontoFrioPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.ponto_frio_bot_instance.search_link_prices(link)
+
+            elif "extra" in site:
+                loop = asyncio.get_running_loop()
+
+                self.extra_bot_instance = ExtraPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.extra_bot_instance.search_link_prices(link)
+
             await self.process_commands(message)
 
         elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?,\s*preco_limite\s*=\s*.+?\)", message.content):
@@ -336,6 +380,20 @@ class MonitorDiscordBot(commands.Bot):
                 self.mercado_livre_bot_instance = MercadoLivrePriceBot(product, price, None, message.author, loop, times)
 
                 await self.mercado_livre_bot_instance.search_specific_product(link_produto, preco_limite)      
+
+            elif "pontofrio" in site:
+                loop = asyncio.get_running_loop()
+
+                self.ponto_frio_bot_instance = PontoFrioPriceBot(product, price, None, message.author, loop, times)
+
+                await self.ponto_frio_bot_instance.search_specific_product(link_produto, preco_limite)
+
+            elif "extra" in site:
+                loop = asyncio.get_running_loop()
+
+                self.extra_bot_instance = ExtraPriceBot(product, price, None, message.author, loop, times)
+
+                await self.extra_bot_instance.search_specific_product(link_produto, preco_limite)
 
             await self.process_commands(message) 
 

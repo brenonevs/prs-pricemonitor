@@ -381,4 +381,3 @@ class CarrefourPriceBot():
         df = df.dropna(how='all')
         df.to_csv(f"{self.search_query}.csv", index=False)
 
-

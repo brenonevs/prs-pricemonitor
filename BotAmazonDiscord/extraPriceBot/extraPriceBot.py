@@ -16,18 +16,16 @@ from selenium.webdriver.support import expected_conditions as EC
 
 from time import sleep, time
 
-from random import randint
-
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 
 # Obtém o valor da variável de ambiente "USER_AGENT"
 userAgent = os.getenv("USER_AGENT")
 
-# Classe que representa o bot para verificar preços no Mercado Livre
-class MercadoLivrePriceBot():
+# Classe que representa o bot para verificar preços no Extra
+class ExtraPriceBot():
     def __init__(self, search_query, expected_price, pages, user, loop, times):
-        self.url = "https://www.mercadolivre.com.br"
+        self.url = "https://www.extra.com.br"
         self.search_query = search_query
         self.priceList = []  # Lista para armazenar os preços encontrados
         self.expected_price = expected_price
@@ -38,7 +36,7 @@ class MercadoLivrePriceBot():
         self.stop_search = False  # Controle de interrupção
         self.processed_links = set()  # Conjunto para armazenar URLs já processados neste ciclo
         self.products_info = []
-        self.product_names = []
+        self.product_names = [] 
 
 
         # Configurações do navegador Chrome
@@ -82,23 +80,20 @@ class MercadoLivrePriceBot():
         message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
         await self.user.send(message)
 
-    def random_sleep(self):
-        sleep(randint(1, 10))
-
-    # Método para realizar a pesquisa do produto na Mercado Livre
+    # Método para realizar a pesquisa do produto na Kabum
     def search_product(self):
-        search_input = self.driver.find_element(By.ID, 'cb1-edit')
+        self.driver.get(self.url)
+        search_input = self.driver.find_element(By.ID, 'search-form-input')
         search_input.send_keys(self.search_query)
         search_input.submit()
-        sleep(1)
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
         product_links = []
-        
+
         try:
             # Obtém os links dos produtos na página atual
-            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item div.ui-search-result__wrapper a.ui-search-item__group__element.ui-search-link__title-card")
+            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.css-1enexmx div.styles__ProductCardWrapper-sc-43255755-3 h3.product-card__title a")
             for card in product_cards:
                 product_links.append({
                     "url": card.get_attribute('href')
@@ -107,29 +102,35 @@ class MercadoLivrePriceBot():
             print(f"Encontrados {len(product_links)} produtos na página atual.")
 
             for product in product_links:
-                if self.stop_search:  # Verificar antes de cada ação
+                if self.stop_search:
                     break
-                self.random_sleep()
                 self.driver.get(product["url"])
+                self.driver.fullscreen_window()
                 sleep(1)
 
                 try:
-                    # Espera até que o título do produto esteja visível
-                    title_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.ui-pdp-title"))
-                    )
-                    product["title"] = title_element.text
+                    try:
+                        # Espera até que o título do produto esteja visível
+                        title_element = WebDriverWait(self.driver, 15).until(
+                            EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-16q9h28"))
+                        )
+                        product["title"] = title_element.text
 
-                    # Espera até que o preço do produto esteja visível
-                    price_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "span.andes-money-amount.ui-pdp-price__part"))
-                    )
-                    price_text = price_element.get_attribute('aria-label').replace(' reais com ', '.').replace(' reais', '').replace("R$", "").replace("centavos", "").strip()
+                        # Espera até que o preço do produto esteja visível
+                        price_element = WebDriverWait(self.driver, 10).until(
+                            EC.visibility_of_element_located((By.CSS_SELECTOR, "p.css-aesmfb span.css-1vmkvrm"))
+                        )
+                        price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').replace("por", "").strip()
+                        price = float(price_text)
 
-                    price = float(price_text)
+                        product["preço"] = price
 
-                    product["preço"] = price
-    
+                        # Aqui vai o resto da lógica para processar os produtos
+
+                    except (NoSuchElementException, TimeoutException) as e:
+                        print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")
+                        continue  # Pula para o próximo produto
+
                     product_data = {
                         "title": product["title"],
                         "preço": product["preço"],
@@ -137,50 +138,36 @@ class MercadoLivrePriceBot():
                     }
 
                     # Verifica se o produto já foi processado
-
                     if product_data['title'] not in self.product_names:
                         # Adiciona o produto à lista de produtos
                         self.products_info.append(product_data)
                         self.product_names.append(product_data['title'])
 
-                        if self.expected_price == None:
-                            
+                        if self.expected_price is None:
                             asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
-                            
                             print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
                         elif price <= self.expected_price:
-
                             asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
+                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
-                            print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")                        
-                    
                     else:
-                        # Verifica se o preço do produto mudou
-                        for product in self.products_info:
+                        for existing_product in self.products_info:
+                            if existing_product["title"] == product_data["title"] and existing_product["preço"] != product_data["preço"]:
+                                existing_product["preço"] = product_data["preço"]
 
-                            if product["title"] == product_data["title"]:
+                                if self.expected_price is None:
+                                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
+                                    print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
 
-                                if product["preço"] != product_data["preço"]:
-
-                                    product["preço"] = product_data["preço"]
-
-                                    if self.expected_price == None:
-                                        
-                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
-                                        
-                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
-
-                                    elif price <= self.expected_price:
-
-                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
-
-                                        print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")                                    
+                                elif price <= self.expected_price:
+                                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
+                                    print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
 
                 except NoSuchElementException:
                     print(f"Não foi possível encontrar o título ou preço para a URL: {product['url']}")
                     continue
-                except ValueError:
+                except ValueError as e:
                     print(f"Formato de preço inválido para '{product['title']}'")
                     continue
                 except TimeoutException:
@@ -188,9 +175,8 @@ class MercadoLivrePriceBot():
                     continue
 
         except Exception as e:
-            print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços")
+            print(f"Ocorreu um erro geral ao tentar buscar os produtos e preços: {e}")
 
-        # Armazena e retorna a lista de produtos e preços
         self.priceList = product_links
         print(self.priceList)
         return self.priceList
@@ -198,25 +184,26 @@ class MercadoLivrePriceBot():
     # Método para navegar para a próxima página de resultados
     def next_page(self):
         try:
-            # Encontra o botão de próxima página usando o novo seletor CSS
-            next_page_buttons = self.driver.find_elements(By.CSS_SELECTOR, "a.andes-pagination__link[title='Siguiente']")
+            self.driver.fullscreen_window()
+            self.driver.execute_script("window.scrollBy(0, 2500);")
+            sleep(1)  # Adjust sleep to a reasonable time instead of 1000 seconds
 
-            # Verifica se o botão de próxima página existe
-            if next_page_buttons:
-                next_page = next_page_buttons[-1]  # Seleciona o último botão encontrado
+            # Encontra o botão de próxima página usando o seletor CSS atualizado
+            next_page = self.driver.find_element(By.CLASS_NAME, "styles__Button-sc-2d44249c-1.cqiuSE")
+
+            # Verifica se o botão está visível e habilitado para clique
+            if next_page.is_displayed() and next_page.is_enabled():
                 next_page.click()
-                print("Indo para a próxima página...")
                 return True
             else:
-                print("Não há mais páginas para navegar.")
+                print("Botão de próxima página está desabilitado ou não visível.")
                 return False
         except NoSuchElementException:
             print("O botão de próxima página não foi encontrado.")
             return False
         except Exception as e:
-            print(f"Ocorreu um erro ao tentar ir para a próxima página")
+            print(f"Ocorreu um erro ao tentar ir para a próxima página: {e}")
             return False
-    
         
     def stop_searching(self):
         self.stop_search = True
@@ -238,8 +225,6 @@ class MercadoLivrePriceBot():
                     self.check_prices()
                     sleep(1)
                     self.driver.get(search_url)
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    sleep(1)
                     if not self.next_page():
                         break
                     search_url = self.driver.current_url
@@ -261,8 +246,6 @@ class MercadoLivrePriceBot():
                     self.check_prices()
                     sleep(1)
                     self.driver.get(search_url)
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    sleep(1)
                     if not self.next_page():
                         break
                     search_url = self.driver.current_url
@@ -286,8 +269,6 @@ class MercadoLivrePriceBot():
                     self.check_prices()
                     sleep(1)
                     self.driver.get(search_url)
-                    sleep(1)
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.91);")
                     if not self.next_page():
                         break
                     search_url = self.driver.current_url
@@ -309,8 +290,6 @@ class MercadoLivrePriceBot():
                     self.check_prices()
                     sleep(1)
                     self.driver.get(search_url) 
-                    sleep(1)
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.91);")
                     if not self.next_page():
                         break
                     search_url = self.driver.current_url
@@ -326,7 +305,7 @@ class MercadoLivrePriceBot():
     def check_specific_product(self, link, expected_price):
         last_price = None  # Variável para armazenar o último preço verificado
 
-        notified_for_price_drop = False 
+        notified_for_price_drop = False
 
         expected_price = float(expected_price)
 
@@ -346,32 +325,34 @@ class MercadoLivrePriceBot():
                 try:
                     self.driver.refresh()
                 except Exception as e:
-                    print(f"Erro ao tentar recarregar a página")
+                    print(f"Erro ao tentar recarregar a página: {e}")
                     continue  # Pula para a próxima iteração do loop
                 continue
 
             try:
-                # Localiza o título do produto usando o novo seletor CSS
-                title_element = self.driver.find_element(By.CSS_SELECTOR, "h1.ui-pdp-title")
+                # Aguarda até que o título do produto seja visível
+                title_element = WebDriverWait(self.driver, 15).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-16q9h28"))
+                )
                 title = title_element.text
 
-                # Localiza o preço do produto usando o novo seletor CSS
-                price_element = self.driver.find_element(By.CSS_SELECTOR, "span.andes-money-amount__fraction")
-                price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
-
+                # Aguarda até que o preço do produto seja visível
+                price_element = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "p.css-aesmfb span.css-1vmkvrm"))
+                )
+                price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').replace("por", "").strip()
                 price = float(price_text)
+
+                print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
 
                 if last_price is None:
                     last_price = price
 
                 if first_notification:
-                    # Envio de notificação (descomente e ajuste conforme necessário)
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(title, price, link), self.loop)
                     first_notification = False
 
-                # Condição modificada para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
                 if price < last_price or (price < expected_price and not notified_for_price_drop):
-                    # Envio de notificação (descomente e ajuste conforme necessário)
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
@@ -382,7 +363,6 @@ class MercadoLivrePriceBot():
             except NoSuchElementException:
                 print(f"Não foi possível encontrar o título ou preço para a URL: {link}")
                 if in_stock:
-                    # Envio de notificação (descomente e ajuste conforme necessário)
                     asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
                     in_stock = False    
                 continue
@@ -391,6 +371,7 @@ class MercadoLivrePriceBot():
                 if "Out of Memory" in str(e):
                     print("Detectado erro 'Out of Memory'. Reiniciando o driver...")
                     self.restart_driver()
+
 
     async def search_specific_product(self, link, expected_price):
         await asyncio.get_event_loop().run_in_executor(None, self.check_specific_product, link, expected_price)
