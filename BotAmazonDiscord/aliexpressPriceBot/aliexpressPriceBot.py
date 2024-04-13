@@ -147,6 +147,7 @@ class AliExpressPriceBot():
                     }
 
                     if product_info['title'] not in self.products_names:
+
                         self.products_names.append(product_info['title'])
                         self.priceListInformation.append(product_info)
 

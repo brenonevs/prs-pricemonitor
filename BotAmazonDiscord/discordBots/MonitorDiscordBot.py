@@ -14,6 +14,8 @@ from pichauPriceBot.pichauPriceBot import PichauPriceBot
 from mercadoLivrePriceBot.mercadoLivrePriceBot import MercadoLivrePriceBot
 from pontofrioPriceBot.pontofrioPriceBot import PontoFrioPriceBot
 from extraPriceBot.extraPriceBot import ExtraPriceBot
+from magazineluizaPriceBot.magazineLuizaPriceBot import MagazineLuizaPriceBot
+from fastPriceBot.fastPriceBot import FastPriceBot
 
 
 class MonitorDiscordBot(commands.Bot):
@@ -41,6 +43,10 @@ class MonitorDiscordBot(commands.Bot):
         self.ponto_frio_bot_instance = None
 
         self.extra_bot_instance = None
+
+        self.magazine_luiza_bot_instance = None
+
+        self.fast_bot_instance = None
         
 
     async def on_ready(self):
@@ -85,6 +91,12 @@ class MonitorDiscordBot(commands.Bot):
 
             if self.extra_bot_instance:
                 self.extra_bot_instance.stop_searching()
+            
+            if self.magazine_luiza_bot_instance:
+                self.magazine_luiza_bot_instance.stop_searching()
+
+            if self.fast_bot_instance:
+                self.fast_bot_instance.stop_searching()
 
             await message.channel.send("Busca interrompida.")
 
@@ -110,6 +122,10 @@ class MonitorDiscordBot(commands.Bot):
             self.ponto_frio_bot_instance = None
 
             self.extra_bot_instance = None
+
+            self.magazine_luiza_bot_instance = None
+
+            self.fast_bot_instance = None
 
             return
 
@@ -206,6 +222,20 @@ class MonitorDiscordBot(commands.Bot):
                 self.extra_bot_instance = ExtraPriceBot(product, price, pages, message.author, loop, times)
 
                 await self.extra_bot_instance.search_prices()
+            
+            elif "magazineluiza" in site:
+                loop = asyncio.get_running_loop()
+
+                self.magazine_luiza_bot_instance = MagazineLuizaPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.magazine_luiza_bot_instance.search_prices()
+
+            elif "fast" in site:
+                loop = asyncio.get_running_loop()
+
+                self.fast_bot_instance = FastPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.fast_bot_instance.search_prices()
 
             await self.process_commands(message)
 
@@ -301,6 +331,20 @@ class MonitorDiscordBot(commands.Bot):
 
                 await self.extra_bot_instance.search_link_prices(link)
 
+            elif "magazineluiza" in site:
+                loop = asyncio.get_running_loop()
+
+                self.magazine_luiza_bot_instance = MagazineLuizaPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.magazine_luiza_bot_instance.search_link_prices(link)
+
+            elif "fast" in site:
+                loop = asyncio.get_running_loop()
+
+                self.fast_bot_instance = FastPriceBot(product, price, pages, message.author, loop, times)
+
+                await self.fast_bot_instance.search_link_prices(link)
+
             await self.process_commands(message)
 
         elif re.search(r"!pesquisar\(link\s*=\s*.+?,\s*site\s*=\s*.+?,\s*repetir\s*=\s*.+?,\s*preco_limite\s*=\s*.+?\)", message.content):
@@ -394,6 +438,20 @@ class MonitorDiscordBot(commands.Bot):
                 self.extra_bot_instance = ExtraPriceBot(product, price, None, message.author, loop, times)
 
                 await self.extra_bot_instance.search_specific_product(link_produto, preco_limite)
+
+            elif "magazineluiza" in site:
+                loop = asyncio.get_running_loop()
+
+                self.magazine_luiza_bot_instance = MagazineLuizaPriceBot(product, price, None, message.author, loop, times)
+
+                await self.magazine_luiza_bot_instance.search_specific_product(link_produto, preco_limite)
+
+            elif "fast" in site:
+                loop = asyncio.get_running_loop()
+
+                self.fast_bot_instance = FastPriceBot(product, price, None, message.author, loop, times)
+
+                await self.fast_bot_instance.search_specific_product(link_produto, preco_limite)
 
             await self.process_commands(message) 
 
