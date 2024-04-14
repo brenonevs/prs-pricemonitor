@@ -13,7 +13,6 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
 
 from time import sleep, time
 
@@ -23,10 +22,10 @@ load_dotenv()
 # Obtém o valor da variável de ambiente "USER_AGENT"
 userAgent = os.getenv("USER_AGENT")
 
-# Classe que representa o bot para verificar preços na Fast
-class FastPriceBot():
+# Classe que representa o bot para verificar preços na Dafiti
+class DafitiPriceBot():
     def __init__(self, search_query, expected_price, pages, user, loop, times):
-        self.url = "https://www.fastshop.com.br/"
+        self.url = "https://www.dafiti.com.br"
         self.search_query = search_query
         self.priceList = []  # Lista para armazenar os preços encontrados
         self.expected_price = expected_price
@@ -37,7 +36,7 @@ class FastPriceBot():
         self.stop_search = False  # Controle de interrupção
         self.processed_links = set()  # Conjunto para armazenar URLs já processados neste ciclo
         self.products_info = []
-        self.product_names = []
+        self.product_names = [] 
 
 
         # Configurações do navegador Chrome
@@ -81,23 +80,24 @@ class FastPriceBot():
         message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
         await self.user.send(message)
 
-    # Método para realizar a pesquisa do produto na Fast
+    # Método para realizar a pesquisa do produto na Dafiti
     def search_product(self):
-        self.driver.get(self.url)
-        sleep(1)
-        # Localiza o input de busca usando o seletor CSS, combinando a classe e o placeholder
-        search_input = self.driver.find_element(By.CSS_SELECTOR, "input.search-input[placeholder='O que deseja?']")
+        # Ajuste o ID para corresponder ao novo ID do elemento de entrada
+        search_input = self.driver.find_element(By.ID, 'input-search')
         search_input.send_keys(self.search_query)
-        # Envia a pesquisa simulando a tecla Enter, pois não foi especificado um botão de envio
-        search_input.send_keys(Keys.ENTER)
+        search_input.submit()
 
     # Método para verificar os preços dos produtos nas páginas
     def check_prices(self):
         product_links = []
-        
+
         try:
-            # Obtém os links dos produtos na página atual
-            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "app-product-item a.without-scroll.clearfix")
+            # Atualiza o seletor para a nova estrutura de product cards
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            sleep(3)
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            sleep(1)
+            product_cards = self.driver.find_elements(By.CSS_SELECTOR, "div.product-box a.product-box-link")
             for card in product_cards:
                 product_links.append({
                     "url": card.get_attribute('href')
@@ -106,7 +106,7 @@ class FastPriceBot():
             print(f"Encontrados {len(product_links)} produtos na página atual.")
 
             for product in product_links:
-                if self.stop_search:
+                if self.stop_search:  # Verificar antes de cada ação
                     break
                 if product["url"] in [info["url"] for info in self.products_info]:
                     continue
@@ -114,22 +114,17 @@ class FastPriceBot():
                 sleep(1)
 
                 try:
-                    # Espera até que o título do produto esteja visível
+                    # Atualiza o seletor para o novo título do produto
                     title_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.XPATH, '//*[@id="auto_title_skeleton_box_empty"]/span'))
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.product-name"))
                     )
                     product["title"] = title_element.text
 
-                    # Espera até que o preço do produto esteja visível
+                    # Atualiza o seletor para o novo preço do produto
                     price_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "span.price-fraction"))
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, "span.catalog-detail-price-value"))
                     )
-                    cents_element = self.driver.find_element(By.CSS_SELECTOR, "span.price-cents")
-
-                    # Obter texto de preço e substituir a primeira ocorrência do ponto por uma string vazia
-                    price_text = price_element.text.replace('.', '', 1) + cents_element.text.replace(',', '.')
-
-                    # Converte o texto de preço ajustado para float
+                    price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
                     price = float(price_text)
 
                     product["preço"] = price
@@ -149,13 +144,13 @@ class FastPriceBot():
 
                         if self.expected_price == None:
                             
-                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
+                            #asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(product['title'], price, product["url"]), self.loop)
                             
                             print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")
 
                         elif price <= self.expected_price:
 
-                            asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
+                            #asyncio.run_coroutine_threadsafe(self.notify_discord_about_new_product(product['title'], price, product["url"]), self.loop)
 
                             print(f"Novo produto!\nPreço encontrado para '{product['title']}' \nPreço: R${price}\n\n")                        
                     
@@ -171,13 +166,13 @@ class FastPriceBot():
 
                                     if self.expected_price == None:
                                         
-                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
+                                        #asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(product['title'], price, product["url"]), self.loop)
                                         
                                         print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")
 
                                     elif price <= self.expected_price:
 
-                                        asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
+                                        #asyncio.run_coroutine_threadsafe(self.notify_discord_about_change_in_price(product['title'], price, product["url"]), self.loop)
 
                                         print(f"Preço mudou para '{product['title']}' \nPreço: R${price}\n\n")                                    
 
@@ -202,25 +197,23 @@ class FastPriceBot():
     # Método para navegar para a próxima página de resultados
     def next_page(self):
         try:
-            # Scroll até o fim da página
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            sleep(3)  # Espera para que a página carregue novos itens após o scroll
-
-            # Verifica se novos cards de produto foram carregados
-            new_product_cards = self.driver.find_elements(By.CSS_SELECTOR, "app-product-item div.wrapper.animation.category-list")
-            if new_product_cards:
-                print(f"Novos produtos carregados")
-                return True
+            current_url = self.driver.current_url
+            # Extrai a parte da URL que contém o número da página, se existir
+            if 'page=' in current_url:
+                base_url = current_url.split('&page=')[0]
+                current_page = int(current_url.split('&page=')[1])
+                next_page_url = f"{base_url}&page={current_page + 1}"
             else:
-                print("Nenhum novo produto encontrado após o scroll.")
-                return False
-        except NoSuchElementException:
-            print("Nenhum elemento de produto encontrado após o scroll.")
-            return False
+                next_page_url = f"{current_url}&page=2"
+            
+            # Vai para a próxima página
+            self.driver.get(next_page_url)
+            sleep(2)  # Pausa para garantir que a página carregue corretamente
+            return True
         except Exception as e:
-            print(f"Ocorreu um erro ao tentar rolar a página para novos produtos: {e}")
+            print(f"Ocorreu um erro ao tentar ir para a próxima página: {e}")
             return False
-        
+
     def stop_searching(self):
         self.stop_search = True
 
@@ -238,7 +231,6 @@ class FastPriceBot():
                 for _ in range(self.pages):
                     if self.stop_search:
                         break
-                    sleep(5)
                     self.check_prices()
                     sleep(1)
                     self.driver.get(search_url)
@@ -347,22 +339,14 @@ class FastPriceBot():
                 continue
 
             try:
-                # Tenta localizar o título do produto usando o novo seletor CSS
-                title_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.XPATH, '//*[@id="auto_title_skeleton_box_empty"]/span'))
-                    )
+                # Tenta localizar o título do produto
+                title_element = self.driver.find_element(By.CSS_SELECTOR, "h1.sc-fdfabab6-6.jNQQeD")
                 title = title_element.text
 
-                # Tenta localizar o preço do produto usando o novo seletor CSS
-                price_element = WebDriverWait(self.driver, 10).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, "span.price-fraction"))
-                    )
-                cents_element = self.driver.find_element(By.CSS_SELECTOR, "span.price-cents")
+                # Tenta localizar o preço do produto
+                price_element = self.driver.find_element(By.CSS_SELECTOR, "h4.sc-5492faee-2.ipHrwP.finalPrice")
+                price_text = price_element.text.replace('R$', '').replace('.', '').replace(',', '.').strip()
 
-                # Obter texto de preço e substituir a primeira ocorrência do ponto por uma string vazia
-                price_text = price_element.text.replace('.', '', 1) + cents_element.text.replace(',', '.')
-
-                # Converte o texto de preço ajustado para float
                 price = float(price_text)
 
                 print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
@@ -371,12 +355,12 @@ class FastPriceBot():
                     last_price = price
 
                 if first_notification:
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(title, price, link), self.loop)
+                    #asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_product(title, price, link), self.loop)
                     first_notification = False
 
                 # Condição modificada para enviar notificação apenas quando o preço diminuir ou for menor que o esperado
                 if price < last_price or (price < expected_price and not notified_for_price_drop):
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(title, price, link), self.loop)
+                    #asyncio.run_coroutine_threadsafe(self.notify_discord_about_monitoring_new_price(title, price, link), self.loop)
                     print(f"Preço encontrado para '{title}' \nPreço: R${price}\n\n")
                     last_price = price  # Atualiza o último preço verificado
                     notified_for_price_drop = True
@@ -386,7 +370,7 @@ class FastPriceBot():
             except NoSuchElementException:
                 print(f"Não foi possível encontrar o título ou preço para a URL: {link}")
                 if in_stock:
-                    asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
+                    #asyncio.run_coroutine_threadsafe(self.notify_discord_about_error(), self.loop)
                     in_stock = False    
                 continue
 
@@ -413,5 +397,5 @@ class FastPriceBot():
 
 if __name__ == "__main__":
     # Cria uma instância do bot
-    bot = FastPriceBot("notebook", 100000, 2, None, None, "indeterminado")
-    bot.check_specific_product("https://www.fastshop.com.br/web/p/d/3005390598_PRD/notebook-lenovo-ultrafino-ideapad-3-r7-5700u-156-amd-radeon-graphics-12gb-512gb-ssd-linux", 3000)
+    bot = DafitiPriceBot("tênis masculino", 10300, 2, None, None, "indeterminado")
+    bot.check_link_prices('https://www.dafiti.com.br/catalog/?q=bermuda+ciclista&wtqs=1&searchPreview=1')

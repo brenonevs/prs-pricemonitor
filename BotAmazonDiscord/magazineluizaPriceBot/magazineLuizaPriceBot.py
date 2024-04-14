@@ -22,7 +22,7 @@ load_dotenv()
 # Obtém o valor da variável de ambiente "USER_AGENT"
 userAgent = os.getenv("USER_AGENT")
 
-# Classe que representa o bot para verificar preços na Kabum
+# Classe que representa o bot para verificar preços na MagineLuiza
 class MagazineLuizaPriceBot():
     def __init__(self, search_query, expected_price, pages, user, loop, times):
         self.url = "https://www.magazineluiza.com.br/"
@@ -79,7 +79,7 @@ class MagazineLuizaPriceBot():
         message = "-" * 70 + f"\n\nOcorreu um erro ao monitorar o produto. \n\nO produto pode estar sem estoque, a página pode estar indisponível ou a estrutura do site mudou!\n\n" + "-" * 70
         await self.user.send(message)
 
-    # Método para realizar a pesquisa do produto na Kabum
+    # Método para realizar a pesquisa do produto na Magazine
     def search_product(self):
         search_input = self.driver.find_element(By.ID, 'input-search')
         search_input.send_keys(self.search_query)
